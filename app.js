@@ -136,10 +136,12 @@ function vAllDone() { return '<div class="intro"><div class="sun big"></div><h1>
 on('home', function () { go('today'); });
 
 /* ---------- Today ---------- */
-function greeting() { var h = new Date().getHours(); return h < 5 ? 'Still up' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
+function greeting() { var h = NOW().getHours(); return h < 5 ? 'Still up' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
 function credits() {
   var c = items(1).map(function (t) { return { t: t, src: 'You give them' }; });
   var p = latest(0).trim(); if (p) c.unshift({ t: p, src: 'What you are proud of' });
+  entries('journal').filter(function (j) { return j.data.kind === 'pm'; }).slice(0, 20).forEach(function (j) {
+    if (j.data.proud) c.push({ t: j.data.proud, src: 'Proud of \u00b7 ' + niceDate(j.at) }); if (j.data.gave) c.push({ t: j.data.gave, src: 'You gave them \u00b7 ' + niceDate(j.at) }); });
   entries('win').slice(0, 30).forEach(function (w) { c.push({ t: w.data.label, src: niceDate(w.at) }); });
   return c;
 }
@@ -152,13 +154,14 @@ function oneOnOneIdeas() {
 }
 function careItems() { var a = []; var plan = entries('plan')[0]; if (plan) a = a.concat(plan.data.items || []); return a.concat(items(5), items(6)).filter(Boolean); }
 function vToday() {
-  var d = new Date(), h = d.getHours() + d.getMinutes() / 60, n = doneCount(), cr = credits(), out = '';
+  var d = NOW(), h = d.getHours() + d.getMinutes() / 60, n = doneCount(), cr = credits(), out = '';
   out += '<header class="hello"><p class="date">' + esc(d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })) + '</p><h1>' + greeting() + '.</h1></header>';
   if (n < P.length) {
     var nq = drafts[ui.lastQ] != null || !answered(ui.lastQ) ? ui.lastQ : nextOpen(ui.lastQ);
     out += '<button class="card reflect-card" data-do="resume"><p class="eyebrow">Reflect \u00b7 ' + n + ' of ' + P.length + '</p><p class="serif">' + esc(fill(P[nq].t)) + '</p><p class="small">' + (n ? 'Pick up where you left off' : 'Start whenever you\u2019re ready. One question is plenty.') + ' \u2192</p></button>';
   }
-  if (h >= 17.5 && h < 20) out += '<div class="card soft"><p class="eyebrow">Family time</p><p>You don\u2019t need a perfect evening. One small moment is enough.</p></div>';
+  if (h >= 17.5 && h < 20 && !isShabbat(d)) out += '<div class="card soft"><p class="eyebrow">Family time</p><p>You don\u2019t need a perfect evening. One small moment is enough.</p></div>';
+  out += journalCard(d);
   var th = (V.config.therapy || '').toLowerCase(), wd = d.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
   if (th && th.indexOf(wd) === 0) out += '<div class="card soft"><p class="eyebrow">Tonight</p><p>' + esc(child()) + ' has her session tonight. Afterward she may want quiet. Be nearby and easy. No questions needed.</p></div>';
   var last1 = entries('moment').filter(function (m) { return m.data.tag === 'One-on-one' && m.data.kid === child(); })[0];
@@ -243,6 +246,7 @@ function vMoments() {
     '<p class="count">' + (wk ? wk + ' small moment' + (wk > 1 ? 's' : '') + ' this week' : 'None logged this week yet. They still happened.') + '</p>' +
     '<div class="card"><p class="eyebrow">One-on-one ideas with ' + esc(child()) + '</p><ul class="ideas">' + oneOnOneIdeas().slice(0, 8).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
     (items(12).length || items(11).length ? '<p class="small">From your own answers.</p>' : '<p class="small">Starter ideas. <a href="#" data-do="gotoQ" data-arg="12">Add your own</a></p>') + '</div>';
+  o += lettersCard();
   o += ms.slice(0, 40).map(function (m) { return '<div class="moment"><p class="small">' + esc(niceDate(m.at)) + ' \u00b7 ' + esc(m.data.kid) + (m.data.tag ? ' \u00b7 ' + esc(m.data.tag) : '') + '</p><p>' + nl(m.data.text) + '</p></div>'; }).join('');
   return o;
 }
@@ -259,6 +263,7 @@ function vCare() {
   o += '<div class="card"><p class="eyebrow">Did well \u00b7 ' + winsToday().length + ' today \u00b7 ' + wk.length + ' this week</p><div class="chips">' + WINS.map(function (x) { return '<button class="chip" data-do="win" data-arg="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
     '<div class="inline"><input id="winx" placeholder="Something else I did well"><button class="btn small" data-do="winx">Add</button></div></div>';
   o += '<div class="card credit"><p class="eyebrow">Remember this</p>' + (credits().length ? '<ul class="wall">' + credits().slice(0, 12).map(function (c) { return '<li><span>' + esc(c.t) + '</span><small>' + esc(c.src) + '</small></li>'; }).join('') + '</ul>' : '<p class="small">Your answers to reflections 1 and 2 will live here. <a href="#" data-do="gotoQ" data-arg="0">Start</a></p>') + '</div>';
+  o += journalHistory();
   o += '<div class="card"><p class="eyebrow">A kinder voice</p>' + (harsh ? '<p class="small">When you slip, you tend to tell yourself:</p><p class="quote">' + nl(harsh) + '</p><p class="small">Would you say that to someone you love? Here\u2019s what you might say to them:</p>' : '<p class="small">Reflection 3 asks how you talk to yourself after a hard moment. <a href="#" data-do="gotoQ" data-arg="2">Answer it</a></p>') +
     '<p class="serif">' + esc(reframe()) + '</p><textarea id="ref" rows="3" placeholder="Rewrite it in your own words, the way you\u2019d say it to a friend"></textarea><button class="btn small" data-do="saveRef">Keep this version</button></div>';
   o += '<div class="card"><p class="eyebrow">My self-care plan</p>' + (pi.length ? '<ul class="plan">' + pi.map(function (x, i) { return '<li><span>' + esc(x) + '</span><button class="x" data-do="rmPlan" data-arg="' + i + '" aria-label="Remove">\u00d7</button></li>'; }).join('') + '</ul>' : '<p class="small">A few small, real things that fill you up. Not a reward for finishing everything.</p>') +
@@ -286,6 +291,134 @@ function vReflect() {
   o += '<button class="card" data-do="ask"><p class="eyebrow">Ask Katya</p><p>Write about a situation and get a thoughtful reply.</p></button>';
   return o;
 }
+
+/* ---------- time + Shabbat ---------- */
+function NOW() { var f = LS.getItem('steady.fakeNow'); return f ? new Date(f) : new Date(); }
+function sunset(d) {
+  var lat = parseFloat(V.config.lat) || 40.7, lon = parseFloat(V.config.lon) || -74.0, R = Math.PI / 180;
+  var start = new Date(d.getFullYear(), 0, 0), J = Math.floor((d - start) / 864e5), g = 2 * Math.PI / 365 * (J - 1);
+  var eq = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g) - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
+  var dec = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
+  var ha = Math.acos(Math.cos(90.833 * R) / (Math.cos(lat * R) * Math.cos(dec)) - Math.tan(lat * R) * Math.tan(dec)) / R;
+  var m = 720 - 4 * (lon - ha) - eq;
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) + m * 60000);
+}
+function isShabbat(d) {
+  d = d || NOW(); var w = d.getDay();
+  if (w === 5) return d >= new Date(sunset(d) - 18 * 60000);
+  if (w === 6) return d < new Date(+sunset(d) + 50 * 60000);
+  return false;
+}
+
+/* ---------- gratitude journal ---------- */
+var HARSH = /\b(messed (it )?up|screw(ed)? up|fail(ed|ure|ing)?|bad (father|dad|parent)|terrible|awful|ruin(ed)?|my fault|(did it|failed|lost it|snapped) again|always do this|never get it right|idiot|stupid|useless|should have|shouldn'?t have|not good enough|worst)\b/i;
+function jToday(kind) { return entries('journal').filter(function (j) { return j.data.kind === kind && day(j.at) === day(nowStr(NOW())); })[0]; }
+function journalCard(d) {
+  if (isShabbat(d)) return '<div class="card soft"><p class="eyebrow">Shabbat</p><p>Nothing to fill in. Just be with them.</p></div>';
+  var h = d.getHours();
+  if (h >= 5 && h < 12 && !jToday('am')) return '<button class="card journal-card" data-do="journal" data-arg="am"><p class="eyebrow">Morning \u00b7 about a minute</p><p class="serif">Who do you want to be with the kids today?</p><p class="small">One intention, one thing you\u2019re grateful for \u2192</p></button>';
+  if ((h >= 20 || h < 3) && !jToday('pm')) return '<button class="card journal-card eve" data-do="journal" data-arg="pm"><p class="eyebrow">Evening \u00b7 two or three minutes</p><p class="serif">Before the day closes, notice what went right.</p><p class="small">Four short questions. Any of them can stay blank \u2192</p></button>';
+  return '';
+}
+var jdraft = {};
+on('journal', function (kind) { var ex = jToday(kind); jdraft = ex ? Object.assign({}, ex.data, { eid: ex.id }) : { kind: kind }; open(function () { return vJournal(kind); }); });
+function kidChips(field, cur) { return '<div class="chips">' + kids().map(function (k) { return '<button class="chip' + (k === cur ? ' on' : '') + '" data-do="jkid" data-arg="' + field + '|' + esc(k) + '">' + esc(k) + '</button>'; }).join('') + '</div>'; }
+function jf(id, label, hint, rows) { return '<label class="lbl" for="j_' + id + '">' + label + '</label>' + (hint ? '<p class="hint">' + hint + '</p>' : '') + '<textarea id="j_' + id + '" rows="' + (rows || 2) + '">' + esc(jdraft[id] || '') + '</textarea>'; }
+function vJournal(kind) {
+  var o = back();
+  if (kind === 'am') {
+    var idea = jdraft.kid ? pick(jdraft.kid === child() ? oneOnOneIdeas() : ['A few minutes of their favorite thing, together', 'Ask about something they care about, then just listen', 'A silly moment at breakfast'], today() + jdraft.kid) : '';
+    o += '<p class="eyebrow">Good morning</p><h1>Just a minute.</h1>' +
+      jf('intention', 'Who do I want to be with the kids today?', 'One word or one line is enough. Calm, present, playful\u2026') +
+      '<label class="lbl">One child to give a small moment to <span class="opt">optional</span></label>' + kidChips('kid', jdraft.kid) +
+      (idea ? '<p class="hint">Maybe: \u201c' + esc(idea) + '\u201d</p>' : '') +
+      jf('grateful', 'One thing I\u2019m grateful for', 'Big or tiny.');
+  } else {
+    var gv = items(1), ci = careItems();
+    o += '<p class="eyebrow">This evening</p><h1>What went right today.</h1><p class="small">There\u2019s no wrong answer, and you don\u2019t have to fill them all.</p>' +
+      jf('proud', 'Something I\u2019m proud of as a dad today', '') +
+      jf('moment', 'One small moment of connection', 'A look, a joke, a ride. Small counts.') + kidChips('momentKid', jdraft.momentKid) +
+      jf('gave', 'Something I gave them that I\u2019d usually overlook', gv.length ? 'Like you wrote: \u201c' + esc(pick(gv, today() + 'g')) + '\u201d' : 'Patience, a hug, being home for dinner\u2026') +
+      jf('care', 'Something I did to take care of myself', ci.length ? 'Even a little: \u201c' + esc(pick(ci, today() + 'j')) + '\u201d' : 'Even five minutes counts.') +
+      jf('love', 'Something I love or admire about one of them <span class="opt">optional</span>', 'Goes into their letter.') + kidChips('loveKid', jdraft.loveKid || child());
+  }
+  return '<div class="page">' + o + '<button class="btn primary" data-do="saveJournal" data-arg="' + kind + '">Save</button></div>';
+}
+function readJ(kind) { ['intention', 'grateful', 'proud', 'moment', 'gave', 'care', 'love'].forEach(function (f) { var e = $app.querySelector('#j_' + f); if (e) jdraft[f] = e.value.trim(); }); }
+on('jkid', function (a) { var p = a.split('|'), kind = jdraft.kind; readJ(); jdraft[p[0]] = jdraft[p[0]] === p[1] && p[0] !== 'loveKid' ? '' : p[1]; open(function () { return vJournal(kind); }); });
+on('saveJournal', function (kind) {
+  readJ(); var all = ['intention', 'grateful', 'proud', 'moment', 'gave', 'care', 'love'].map(function (f) { return jdraft[f] || ''; }).join('\n');
+  if (!all.trim()) { toast('Nothing to save yet'); return; }
+  var m = all.match(HARSH);
+  if (m && !jdraft.kindChecked) { open(function () { return vKinder(m[0], all); }); return; }
+  commitJournal();
+});
+function kinderRewrite() { var r = entries('reframe')[0]; return r ? r.data.text : 'Today had a hard moment, and I care enough to notice it. That\u2019s what a loving father does. I can repair it, and it doesn\u2019t undo the love I give them every day.'; }
+function vKinder(word) {
+  return '<div class="page"><div class="ptop"><button class="link" data-do="backJ">\u2190 Back to my entry</button></div><p class="eyebrow">A gentle pause</p><h1>You wrote \u201c' + esc(word) + '.\u201d</h1>' +
+    '<p>If someone you love said that about themselves, how would you answer them?</p>' +
+    '<div class="script"><p class="eyebrow">A kinder way to say it</p><p class="serif">' + esc(kinderRewrite()) + '</p></div>' +
+    '<textarea id="kind" rows="4" placeholder="Or write it your way, the way you\u2019d say it to a friend"></textarea>' +
+    '<button class="btn primary" data-do="keepKind">Keep the kinder version</button><button class="btn ghost" data-do="skipKind">Save my entry as it is</button></div>';
+}
+on('backJ', function () { var k = jdraft.kind; open(function () { return vJournal(k); }); });
+on('keepKind', function () { var t = $app.querySelector('#kind').value.trim(); jdraft.kinder = t || kinderRewrite(); if (t) entry('reframe', { text: t }); commitJournal(); });
+on('skipKind', function () { commitJournal(); });
+function commitJournal() {
+  var d = Object.assign({}, jdraft), eid = d.eid || uid(); delete d.eid; delete d.kindChecked;
+  entry('journal', d, eid);
+  if (d.kind === 'pm' && d.moment) { var me = 'jm_' + eid; entry('moment', { kid: d.momentKid || child(), text: d.moment, tag: 'From journal' }, me); }
+  if (d.kind === 'pm' && d.love) entry('love', { kid: d.loveKid || child(), text: d.love, src: 'journal' }, 'jl_' + eid);
+  toast(d.kind === 'am' ? 'Have a good day.' : 'Saved. Rest well.'); go('today');
+}
+function journalHistory() {
+  var js = entries('journal').slice(0, 6);
+  var o = '<div class="card"><p class="eyebrow">Gratitude journal</p><div class="row2"><button class="btn small" data-do="journal" data-arg="am">Morning</button><button class="btn small" data-do="journal" data-arg="pm">Evening</button></div>';
+  o += js.map(function (j) { var x = j.data; return '<div class="jentry"><p class="small">' + esc(niceDate(j.at)) + ' \u00b7 ' + (x.kind === 'am' ? 'Morning' : 'Evening') + '</p>' +
+    [['intention', 'Today I want to be'], ['grateful', 'Grateful for'], ['proud', 'Proud of'], ['moment', 'A moment'], ['gave', 'I gave them'], ['care', 'For myself'], ['kinder', 'Kinder version']].filter(function (f) { return x[f[0]]; }).map(function (f) { return '<p><b>' + f[1] + ':</b> ' + esc(x[f[0]]) + '</p>'; }).join('') + '</div>'; }).join('');
+  return o + '</div>';
+}
+
+/* ---------- letters ---------- */
+var lkid = null;
+function loves(k) { return entries('love').filter(function (l) { return l.data.kid === k; }); }
+function lettersCard() {
+  var k = lkid || child(), ls = loves(k), lt = entries('letter').filter(function (l) { return l.data.kid === k; });
+  return '<div class="card letter-card"><p class="eyebrow">Letter to ' + esc(k) + '</p><div class="chips">' + kids().map(function (x) { return '<button class="chip' + (x === k ? ' on' : '') + '" data-do="lkid" data-arg="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
+    '<p class="small">Things you love or admire about ' + esc(k) + '. One line at a time, whenever you notice.</p>' +
+    '<div class="inline"><input id="lovex" placeholder="I love how she\u2026"><button class="btn small" data-do="addLove">Add</button></div>' +
+    (ls.length ? '<ul class="wall">' + ls.slice(0, 8).map(function (l) { return '<li><span>' + esc(l.data.text) + '</span><small>' + esc(niceDate(l.at)) + (l.data.src === 'journal' ? ' \u00b7 from your evening journal' : '') + '</small></li>'; }).join('') + '</ul>' + (ls.length > 8 ? '<p class="small">+ ' + (ls.length - 8) + ' more</p>' : '') : '') +
+    '<button class="btn primary" data-do="compose">Compose letter</button>' +
+    (lt.length ? '<p class="small">Saved letters: ' + lt.map(function (l) { return '<a href="#" data-do="openLetter" data-arg="' + l.id + '">' + esc(l.data.occasion || 'Letter') + ' \u00b7 ' + esc(niceDate(l.at)) + '</a>'; }).join(', ') + '</p>' : '') + '</div>';
+}
+on('lkid', function (k) { lkid = k; render(); });
+on('addLove', function () { var v = $app.querySelector('#lovex').value.trim(); if (!v) return; entry('love', { kid: lkid || child(), text: v }); toast('Kept for the letter'); render(); });
+var OCC = { 'Birthday': ['Happy birthday. Another year of watching you grow, and I wanted to write down some of what I see.', 'I\u2019m so proud to be your father. I hope this year is full of good things.'],
+  'A milestone': ['This is a big day, and before it passes I wanted to tell you some things I don\u2019t always say out loud.', 'Whatever comes next, I\u2019m right behind you.'],
+  'A hard week': ['I know this week has been hard. You don\u2019t have to talk about it. I just wanted you to have this.', 'Hard weeks end. What I feel about you doesn\u2019t change. I\u2019m here whenever you want me.'],
+  'Just because': ['No reason for this letter except that I love you and wanted you to know it in writing.', 'I\u2019m lucky to be your father.'] };
+var letter = null;
+on('compose', function () { var k = lkid || child(); letter = { kid: k, occasion: 'Just because' }; letter.text = buildLetter(k, letter.occasion); open(vLetter); });
+on('openLetter', function (id) { var l = entries('letter').filter(function (x) { return x.id === id; })[0]; if (!l) return; letter = Object.assign({ eid: l.id }, l.data); open(vLetter); });
+function buildLetter(k, occ) {
+  var ls = loves(k).slice().reverse().map(function (l) { return l.data.text.replace(/\.$/, ''); });
+  var ms = entries('moment').filter(function (m) { return m.data.kid === k && m.data.text; }).slice(0, 4).reverse().map(function (m) { return m.data.text.replace(/\.$/, ''); });
+  var o = OCC[occ], t = 'Dear ' + k + ',\n\n' + o[0] + '\n\n';
+  if (ls.length) t += 'Some things I love about you:\n' + ls.map(function (x) { return '\u2022 ' + x; }).join('\n') + '\n\n';
+  if (ms.length) t += 'Some small moments with you that I keep with me:\n' + ms.map(function (x) { return '\u2022 ' + x; }).join('\n') + '\n\n';
+  if (!ls.length && !ms.length) t += '[Write a few things you love about ' + k + ' here]\n\n';
+  return t + o[1] + '\n\nI love you always,\nAbba';
+}
+function vLetter() {
+  return '<div class="page"><div class="ptop"><button class="link" data-do="closeO">\u2190 Back</button></div><p class="eyebrow">Letter to ' + esc(letter.kid) + '</p><h1>Your words, gathered.</h1>' +
+    '<p class="small">Everything you\u2019ve noted is in here. Edit it however you like and keep it for the right moment.</p>' +
+    '<div class="chips">' + Object.keys(OCC).map(function (x) { return '<button class="chip' + (x === letter.occasion ? ' on' : '') + '" data-do="occ" data-arg="' + x + '">' + x + '</button>'; }).join('') + '</div>' +
+    '<textarea id="ltext" class="letter" rows="18">' + esc(letter.text) + '</textarea>' +
+    '<button class="btn primary" data-do="saveLetter">Keep this letter</button><button class="btn ghost" data-do="copyLetter">Copy text</button></div>';
+}
+on('occ', function (x) { var cur = $app.querySelector('#ltext').value; if (cur === letter.text || confirm('Start over with the ' + x + ' opening? Your edits will be replaced.')) { letter.occasion = x; letter.text = buildLetter(letter.kid, x); open(vLetter); } });
+on('saveLetter', function () { var t = $app.querySelector('#ltext').value; letter.text = t; entry('letter', { kid: letter.kid, occasion: letter.occasion, text: t }, letter.eid || (letter.eid = uid())); toast('Letter kept privately'); });
+on('copyLetter', function () { var t = $app.querySelector('#ltext').value; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast('Copied'); }, function () { toast('Select the text and copy it'); }); });
 
 /* ---------- Ask Katya ---------- */
 on('ask', function () { open(vAsk); });

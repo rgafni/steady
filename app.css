@@ -74,3 +74,9 @@ textarea:focus,input:focus{border-color:var(--terra);box-shadow:0 0 0 3px rgba(1
 .kat{background:#EEF2EA;border-radius:16px 16px 16px 4px;padding:12px 14px}
 #toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 84px);transform:translate(-50%,20px);background:var(--ink);color:#fff;padding:10px 18px;border-radius:999px;font-size:15px;opacity:0;transition:.25s;pointer-events:none;z-index:9}
 #toast.on{opacity:1;transform:translate(-50%,0)}
+.journal-card{background:linear-gradient(160deg,#FFF8EC,#FBE9CF)}.journal-card.eve{background:linear-gradient(160deg,#F1ECF2,#E6E9F1)}
+.hint{font:italic 15px/1.45 var(--serif);color:var(--soft);margin:0 0 2px}
+.opt{font-weight:400;color:#A99B8D;font-size:13px}
+.jentry{border-top:1px dashed var(--line);padding-top:10px;margin-top:10px}.jentry p{font-size:15px;margin:0 0 4px}
+.letter-card{background:linear-gradient(160deg,#FFFBF5,#F6EBDD)}
+textarea.letter{font:17px/1.7 var(--serif);background:#FFFDF8;min-height:50vh}
