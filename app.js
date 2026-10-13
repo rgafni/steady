@@ -79,7 +79,7 @@ function render() {
   V = view();
   if (!K) { $app.innerHTML = '<div class="locked"><div class="sun"></div><h1>Steady</h1><p>This is a private app. Open it from your personal link.</p></div>'; return; }
   if (overlay) { $app.innerHTML = overlay(); bindAll(); return; }
-  var body = ({ home: vHome, today: vHome, moment: vMoment, moments: vMoments, care: vCare, reflect: vReflect, people: vPortal, memories: vMemories, letters: vLetters })[route.tab]();
+  var body = ({ home: vHome, today: vHome, moment: vMoment, moments: vMoments, care: vCare, reflect: vReflect, people: vPortal, memories: vMemories, letters: vLetters, archive: vArchive })[route.tab]();
   var top = route.tab === 'home' || route.tab === 'today' ? '<div class="bar brand"><span class="sun tiny"></span><span>Steady</span></div>' : '<div class="bar"><button class="link" data-tab="home">\u2190 Home</button></div>';
   $app.innerHTML = '<main class="page">' + top + body + '<p class="sync">' + esc(syncLine()) + '</p></main>';
   bindAll();
@@ -186,7 +186,7 @@ var HELP = [
   ['messed', 'I think I messed up', 'Talk to yourself like someone you love'],
   ['racing', 'My mind is racing', 'Slow down, set it down, one small step']
 ];
-function vMoment() {
+function vMomentOld() {
   return '<h1>Right now</h1><p class="lead">One breath first.</p>' +
     HELP.map(function (h) { return '<button class="card helper" data-do="help" data-arg="' + h[0] + '"><p class="serif">' + esc(fill(h[1])) + '</p><p class="small">' + esc(h[2]) + '</p></button>'; }).join('') +
     '<button class="btn ghost" data-do="ask">Ask Katya</button>';
@@ -256,7 +256,7 @@ on('saveMoment', function () { var t = $app.querySelector('#mtext').value.trim()
   entry('moment', { kid: (route.preset || {}).kid || ui.kid || child(), text: t, tag: tg ? tg.dataset.arg : '' }); route.preset = {}; toast('Saved. That mattered.'); render(); });
 
 /* ---------- Care: self-compassion + self-care ---------- */
-function vCare() {
+function vCareOld() {
   var ws = entries('win'), wk = ws.filter(function (w) { return daysAgo(w.at) < 7; }), harsh = latest(2).trim(), plan = entries('plan')[0], pi = plan ? plan.data.items : [];
   var seeds = items(5).concat(items(6)).filter(function (x) { return pi.indexOf(x) < 0; });
   var o = '<h1>Care</h1>';
@@ -279,7 +279,7 @@ on('planx', function () { var v = $app.querySelector('#planx').value.trim(); if 
 on('rmPlan', function (i) { var p = entries('plan')[0]; var l = p.data.items.slice(); l.splice(+i, 1); setPlan(l); });
 
 /* ---------- Reflect / revisit ---------- */
-function vReflect() {
+function vReflectOld() {
   var n = doneCount(), o = '<h1>Reflect</h1><p class="lead">' + n + ' of ' + P.length + ' answered</p>';
   if (n < P.length) o += '<button class="btn primary" data-do="resume">' + (n ? 'Continue where I left off' : 'Begin') + '</button>';
   ['you', 'child'].forEach(function (s) {
@@ -313,7 +313,7 @@ function isShabbat(d) {
 /* ---------- gratitude journal ---------- */
 var HARSH = /\b(messed (it )?up|screw(ed)? up|fail(ed|ure|ing)?|bad (father|dad|parent)|terrible|awful|ruin(ed)?|my fault|(did it|failed|lost it|snapped) again|always do this|never get it right|idiot|stupid|useless|should have|shouldn'?t have|not good enough|worst)\b/i;
 function jToday(kind) { return entries('journal').filter(function (j) { return j.data.kind === kind && day(j.at) === day(nowStr(NOW())); })[0]; }
-function journalCard(d) {
+function journalCardOld(d) {
   if (isShabbat(d)) return '<div class="card soft"><p class="eyebrow">Shabbat</p><p>Nothing to fill in. Just be with them.</p></div>';
   var h = d.getHours();
   if (h >= 5 && h < 12 && !jToday('am')) return '<button class="card journal-card" data-do="journal" data-arg="am"><p class="eyebrow">Morning \u00b7 about a minute</p><p class="serif">Who do you want to be with the kids today?</p><p class="small">One intention, one thing you\u2019re grateful for \u2192</p></button>';
@@ -529,13 +529,15 @@ on('secBack', function (s) { var k = portal(); open(function () { return vSec(k,
 /* ---------- home ---------- */
 function vHome() {
   var d = NOW(), q = isShabbat(d), o = '<header class="home-hello"><p class="date">' + esc(d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })) + '</p><h1>' + greeting() + '.</h1></header>';
-  o += journalCard(d) || (q ? '' : '<button class="card prompt-card" data-do="journal" data-arg="' + (d.getHours() < 15 ? 'am' : 'pm') + '"><p class="eyebrow">' + (d.getHours() < 15 ? 'This morning' : 'Tonight') + '</p><p class="serif">' + (jToday('am') || jToday('pm') ? 'You already wrote today. Add more?' : 'A minute for your journal') + '</p></button>');
+  o += journalCard(d) || (q ? '' : '<button class="card prompt-card" data-do="journal" data-arg="' + (d.getHours() < 15 ? 'am' : 'pm') + '"><p class="eyebrow">' + (d.getHours() < 15 ? '\u2600 Morning' : '\u263E Evening') + '</p><p class="serif">' + (jToday('am') || jToday('pm') ? 'Add to today\u2019s journal' : 'A minute for your journal') + '</p></button>');
   o += '<div class="people">' + kids().map(function (k) {
     var m = memories(k)[0], mo = forKid('moment', k)[0], a = ages()[k], line = m ? (m.data.note || 'A memory') : mo ? (mo.data.text || mo.data.tag) : loves(k)[0] ? loves(k)[0].data.text : '';
     return '<button class="person" style="--a:' + accent(k) + '" data-do="portal" data-arg="' + esc(k) + '">' + avatar(k, 'lg') + '<span class="pt"><b>' + esc(k) + (a ? '<em>' + a + '</em>' : '') + '</b>' + (line ? '<small>' + esc(cut(line, 60)) + '</small>' : '') + '</span><span class="chev">\u203A</span></button>'; }).join('') +
     '<button class="person me" style="--a:' + accent('Me') + '" data-do="portal" data-arg="Me">' + avatar('Me', 'lg') + '<span class="pt"><b>Me</b><small>' + esc(cut(pick(SELF, today() + 's'), 60)) + '</small></span><span class="chev">\u203A</span></button></div>';
-  var allm = entries('memory').filter(function (m) { return m.data.thumb; });
+  var otd = onThisDay(); if (otd) o += '<div class="otd"><p class="eyebrow">' + otd.label + '</p>' + card(otd.it, true) + '</div>';
+  var allm = entries('memory').filter(function (m) { return m.data.thumb; }), ai = allItems(), wkn = ai.filter(function (i) { return daysAgo(i.day) < 7; });
   o += '<div class="grid">' +
+    '<button class="gtile wide arch" data-tab="archive"><b>\u270E Journal</b><small>' + (ai.length ? ai.length + ' entries \u00b7 ' + wkn.length + ' this week' : 'Everything you write, by day') + '</small>' + (wkn.length ? dots(uniqWho(wkn)) : '') + '</button>' +
     '<button class="gtile wide" data-tab="memories"><b>\u25A3 Memories</b>' + (allm.length ? '<span class="strip">' + allm.slice(0, 5).map(function (m) { return '<span style="background-image:url(' + esc(m.data.thumb) + ')"></span>'; }).join('') + '</span>' : '<small>Photos and proud moments</small>') + '</button>' +
     '<button class="gtile" data-tab="letters"><b>\u2709 Letters</b><small>' + entries('letter').length + ' kept</small></button>' +
     '<button class="gtile" data-tab="moment"><b>\u2766 Right now</b><small>A hard moment</small></button>' +
@@ -559,6 +561,154 @@ function vLetters() {
     return '<button class="person" style="--a:' + accent(k) + '" data-do="letterFor" data-arg="' + esc(k) + '">' + avatar(k, 'lg') + '<span class="pt"><b>' + esc(k) + '</b><small>' + (lt.length ? lt.length + ' kept \u00b7 ' + esc(niceDate(lt[0].at)) : loves(k).length + ' things noted') + '</small></span><span class="chev">\u203A</span></button>'; }).join('') + '</div>';
 }
 on('letterFor', function (k) { ui.portal = k; jset('steady.ui', ui); open(function () { return vSec(k, 'letter'); }); });
+
+/* ---------- archive: every entry, one shape ---------- */
+var TYPES = [['journal', 'Journal', '\u270E'], ['moment', 'Moments', '\u2766'], ['memory', 'Memories', '\u25A3'], ['notice', 'Notices', '\u2727'], ['win', 'Wins', '\u2714'], ['letter', 'Letters', '\u2709']];
+function tinfo(t) { return TYPES.filter(function (x) { return x[0] === t; })[0] || ['', '', '\u00b7']; }
+function allItems() {
+  var out = [], ks = kids();
+  function add(e, type, who, title, text, extra) { who = (who || []).filter(function (w) { return w === 'Me' || ks.indexOf(w) >= 0; }); if (!who.length) who = ['Me'];
+    out.push(Object.assign({ id: e.id, at: e.at, day: (e.data.date || day(e.at)).slice(0, 10), type: type, who: who, title: title, text: String(text || '') }, extra || {})); }
+  V.entries.forEach(function (e) { var d = e.data || {};
+    if (e.type === 'journal') { var w = (d.about || []).slice(); [d.kid, d.momentKid, d.loveKid].forEach(function (k) { if (k && w.indexOf(k) < 0) w.push(k); }); if (d.care && w.indexOf('Me') < 0) w.push('Me');
+      var f = [['intention', 'Wanted to be'], ['grateful', 'Grateful for'], ['proud', 'Proud of'], ['moment', 'A moment'], ['gave', 'I gave them'], ['care', 'For myself'], ['love', 'I love'], ['kinder', 'Kinder version']].filter(function (y) { return d[y[0]]; });
+      add(e, 'journal', w, d.kind === 'am' ? 'Morning' : 'Evening', f.map(function (y) { return y[1] + ': ' + d[y[0]]; }).join('\n'), { fields: f.map(function (y) { return [y[1], d[y[0]]]; }) }); }
+    else if (e.type === 'moment' && !/^jm_/.test(e.id)) add(e, 'moment', [d.kid], d.tag || 'Moment', d.text);
+    else if (e.type === 'love' && !/^jl_/.test(e.id)) add(e, 'notice', [d.kid], 'Noticed', d.text);
+    else if (e.type === 'win') add(e, 'win', ['Me'], 'Did well', d.label);
+    else if (e.type === 'reframe') add(e, 'journal', ['Me'], 'Kinder version', d.text);
+    else if (e.type === 'memory') add(e, 'memory', [d.kid], (PROUD.filter(function (p) { return p[0] === d.proud; })[0] || ['', 'Memory'])[1], d.note, { thumb: d.thumb, video: /^video/.test(d.mime || '') });
+    else if (e.type === 'letter') add(e, 'letter', [d.kid], 'Letter \u00b7 ' + (d.occasion || ''), d.text);
+  });
+  return out.sort(function (a, b) { var x = a.day + a.at, y = b.day + b.at; return x < y ? 1 : -1; });
+}
+function af() { var f = ui.af || {}; return { who: f.who || [], types: f.types || [], q: f.q || '' }; }
+function filtered(f) { f = f || af(); var q = f.q.toLowerCase().trim();
+  return allItems().filter(function (it) { return (!f.who.length || it.who.some(function (w) { return f.who.indexOf(w) >= 0; })) && (!f.types.length || f.types.indexOf(it.type) >= 0) && (!q || (it.title + ' ' + it.text + ' ' + it.who.join(' ')).toLowerCase().indexOf(q) >= 0); }); }
+function dots(who) { return '<span class="pdots">' + who.map(function (w) { return '<i style="background:' + accent(w) + '"></i>'; }).join('') + '</span>'; }
+function card(it, showDate) { var t = tinfo(it.type), long = it.text.length > 90 || (it.fields && it.fields.length > 1);
+  var head = '<span class="ci" style="--a:' + accent(it.who[0]) + '">' + t[2] + '</span><span class="cb"><span class="ct"><b>' + esc(it.title) + '</b><em>' + esc(it.who.join(', ')) + (showDate ? ' \u00b7 ' + esc(niceDate(it.day)) : ' \u00b7 ' + esc(String(it.at).slice(11, 16))) + '</em></span>' +
+    '<span class="cx">' + esc(cut(it.text.replace(/\n+/g, ' \u00b7 '), 90)) + '</span></span>' + (it.thumb ? '<span class="th sm" style="background-image:url(' + esc(it.thumb) + ')">' + (it.video ? '<b>\u25B6</b>' : '') + '</span>' : '');
+  if (it.type === 'memory') return '<button class="ent" data-do="openMem" data-arg="' + it.id + '">' + head + '</button>';
+  if (!long) return '<div class="ent">' + head + '</div>';
+  return '<details class="ent"><summary>' + head + '</summary><div class="full">' + (it.fields ? it.fields.map(function (f) { return '<p><b>' + esc(f[0]) + '</b>' + nl(f[1]) + '</p>'; }).join('') : '<p>' + nl(it.text) + '</p>') + '</div></details>';
+}
+function filterBar() { var f = af();
+  return '<input id="asearch" type="search" placeholder="Search everything" value="' + esc(f.q) + '">' +
+    '<div class="chips scroll">' + kids().concat(['Me']).map(function (k) { return '<button class="chip pc' + (f.who.indexOf(k) >= 0 ? ' on' : '') + '" style="--a:' + accent(k) + '" data-do="afWho" data-arg="' + esc(k) + '"><i style="background:' + accent(k) + '"></i>' + esc(k) + '</button>'; }).join('') + '</div>' +
+    '<div class="chips scroll">' + TYPES.map(function (t) { return '<button class="chip' + (f.types.indexOf(t[0]) >= 0 ? ' on' : '') + '" data-do="afType" data-arg="' + t[0] + '">' + t[2] + ' ' + t[1] + '</button>'; }).join('') + '</div>';
+}
+function toggleIn(key, v) { var f = af(), a = f[key].slice(), i = a.indexOf(v); if (i >= 0) a.splice(i, 1); else a.push(v); f[key] = a; ui.af = f; jset('steady.ui', ui); render(); }
+on('afWho', function (k) { toggleIn('who', k); });
+on('afType', function (t) { toggleIn('types', t); });
+on('aview', function (v) { ui.aview = v; jset('steady.ui', ui); render(); });
+function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function weekStart(s) { var d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() - d.getDay()); return ymd(d); }
+function vArchive() {
+  var v = ui.aview || 'feed', its = filtered(), o = '<h1>Journal</h1>';
+  o += '<div class="seg"><button class="' + (v === 'feed' ? 'on' : '') + '" data-do="aview" data-arg="feed">Timeline</button><button class="' + (v === 'cal' ? 'on' : '') + '" data-do="aview" data-arg="cal">Calendar</button></div>';
+  o += filterBar() + '<div id="ares">' + (v === 'cal' ? calendar(its) : feed(its)) + '</div>';
+  return o;
+}
+function feed(its) {
+  if (!its.length) return '<p class="empty">' + (af().q || af().who.length || af().types.length ? 'Nothing matches.' : 'Nothing written yet.') + '</p>';
+  var o = '', mo = '', wk = '', dy = '', thisMonth = today().slice(0, 7), thisWeek = weekStart(today()), searching = !!af().q;
+  its.slice(0, 400).forEach(function (it) { var m = it.day.slice(0, 7), w = weekStart(it.day);
+    if (m !== mo) { if (mo) o += '</div></details></details>'; mo = m; wk = ''; var n = its.filter(function (x) { return x.day.slice(0, 7) === m; }).length;
+      o += '<details class="month"' + (m === thisMonth || searching || o === '' ? ' open' : '') + '><summary><span>' + esc(new Date(m + '-15T12:00:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' })) + '</span><em>' + n + '</em></summary>'; }
+    if (w !== wk) { if (wk) o += '</div></details>'; wk = w; dy = ''; var e = new Date(w + 'T12:00:00'); e.setDate(e.getDate() + 6); var nw = its.filter(function (x) { return weekStart(x.day) === w; }).length;
+      o += '<details class="week"' + (w === thisWeek || searching || true ? ' open' : '') + '><summary>Week of ' + esc(new Date(w + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '<em>' + nw + '</em></summary><div>'; }
+    if (it.day !== dy) { dy = it.day; o += '<button class="dayh" data-do="openDay" data-arg="' + dy + '"><b>' + esc(new Date(dy + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })) + '</b>' + dots(uniqWho(its.filter(function (x) { return x.day === dy; }))) + '<span>\u203A</span></button>'; }
+    o += card(it);
+  });
+  return o + '</div></details></details>';
+}
+function uniqWho(its) { var s = []; its.forEach(function (i) { i.who.forEach(function (w) { if (s.indexOf(w) < 0) s.push(w); }); }); var order = kids().concat(['Me']); return s.sort(function (a, b) { return order.indexOf(a) - order.indexOf(b); }); }
+function calendar(its) {
+  var m = ui.amonth || today().slice(0, 7), first = new Date(m + '-01T12:00:00'), y = first.getFullYear(), mi = first.getMonth(), nd = new Date(y, mi + 1, 0).getDate(), by = {};
+  its.forEach(function (i) { (by[i.day] = by[i.day] || []).push(i); });
+  var o = '<div class="calhead"><button class="link" data-do="amonth" data-arg="-1">\u2039</button><b>' + esc(first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })) + '</b><button class="link" data-do="amonth" data-arg="1">\u203A</button></div><div class="cal">' +
+    ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(function (d, i) { return '<span class="dow' + (i === 6 ? ' sh' : '') + '">' + d + '</span>'; }).join('');
+  for (var i = 0; i < first.getDay(); i++) o += '<span></span>';
+  for (var dd = 1; dd <= nd; dd++) { var s = m + '-' + pad(dd), x = by[s] || [];
+    o += '<button class="cd' + (s === today() ? ' today' : '') + (x.length ? ' has' : '') + '" data-do="openDay" data-arg="' + s + '"' + (x.length ? '' : ' disabled') + '><span>' + dd + '</span>' + (x.length ? dots(uniqWho(x)) : '') + '</button>'; }
+  o += '</div>';
+  var mc = its.filter(function (i) { return i.day.slice(0, 7) === m; });
+  o += '<p class="when center">' + mc.length + ' entr' + (mc.length === 1 ? 'y' : 'ies') + ' this month \u00b7 ' + Object.keys(by).filter(function (k) { return k.slice(0, 7) === m; }).length + ' days</p>';
+  return o;
+}
+on('amonth', function (dlt) { var m = ui.amonth || today().slice(0, 7), d = new Date(m + '-15T12:00:00'); d.setMonth(d.getMonth() + (+dlt)); ui.amonth = ymd(d).slice(0, 7); jset('steady.ui', ui); render(); });
+on('openDay', function (s) { open(function () { return vDay(s); }); });
+function vDay(s) {
+  var its = filtered({ who: [], types: [], q: '' }).filter(function (i) { return i.day === s; }), d = new Date(s + 'T12:00:00');
+  var prev = new Date(d), next = new Date(d); prev.setDate(d.getDate() - 1); next.setDate(d.getDate() + 1);
+  var o = '<div class="page"><div class="bar"><button class="link" data-do="closeO">\u2190 Journal</button></div>' +
+    '<div class="dayhead"><button class="link" data-do="openDay" data-arg="' + ymd(prev) + '" aria-label="Previous day">\u2039</button><div><p class="date">' + esc(d.toLocaleDateString(undefined, { weekday: 'long' })) + '</p><h1>' + esc(d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })) + '</h1></div><button class="link" data-do="openDay" data-arg="' + ymd(next) + '"' + (ymd(next) > today() ? ' disabled' : '') + ' aria-label="Next day">\u203A</button></div>';
+  if (!its.length) return o + '<p class="empty">Nothing written this day. It still counted.</p></div>';
+  uniqWho(its).forEach(function (w) { var mine = its.filter(function (i) { return i.who[0] === w || (i.who.indexOf(w) >= 0 && uniqWho([i])[0] === w); });
+    if (!mine.length) return; var mem = mine.filter(function (i) { return i.thumb; });
+    o += '<section class="dgroup" style="--a:' + accent(w) + '"><header>' + avatar(w, 'sm') + '<b>' + esc(w) + '</b><em>' + mine.length + '</em></header>' +
+      (mem.length ? '<div class="mgrid">' + mem.map(function (i) { return '<button class="th" data-do="openMem" data-arg="' + i.id + '" style="background-image:url(' + esc(i.thumb) + ')">' + (i.video ? '<b>\u25B6</b>' : '') + '</button>'; }).join('') + '</div>' : '') +
+      mine.filter(function (i) { return !i.thumb; }).sort(function (a, b) { return a.at < b.at ? -1 : 1; }).map(function (i) { return card(i); }).join('') + '</section>'; });
+  return o + '</div>';
+}
+function onThisDay() {
+  var its = allItems(), t = today(), wk = new Date(t + 'T12:00:00'); wk.setDate(wk.getDate() - 7); var w = ymd(wk);
+  var past = its.filter(function (i) { return i.day !== t && i.day.slice(5) === t.slice(5); });
+  if (past.length) return { label: 'On this day', it: pick(past, t + 'o') };
+  var lw = its.filter(function (i) { return i.day === w && (i.type === 'memory' || i.type === 'moment' || i.type === 'notice'); });
+  if (lw.length) return { label: 'A week ago', it: pick(lw, t + 'w') };
+  return null;
+}
+/* search box updates results without stealing focus */
+$app.addEventListener('input', function (ev) { if (ev.target.id !== 'asearch') return; var f = af(); f.q = ev.target.value; ui.af = f; jset('steady.ui', ui); var r = document.getElementById('ares'); if (r) { r.innerHTML = (ui.aview === 'cal' ? calendar : feed)(filtered()); bindAll(); } });
+
+/* ---------- clean versions of the older screens ---------- */
+function vMoment() {
+  var ic = { quiet: '\u263E', limit: '\u25A2', messed: '\u2661', racing: '\u2248' };
+  return '<h1>Right now</h1><p class="lead">One breath first.</p><div class="stack">' +
+    HELP.map(function (h) { return '<button class="rn" data-do="help" data-arg="' + h[0] + '"><i>' + ic[h[0]] + '</i><span><b>' + esc(fill(h[1])) + '</b><small>' + esc(h[2]) + '</small></span><span class="chev">\u203A</span></button>'; }).join('') + '</div>' +
+    '<button class="btn ghost" data-do="ask">Ask Katya</button>';
+}
+function vCare() {
+  var plan = entries('plan')[0], pi = plan ? plan.data.items : [], cr = credits();
+  return '<h1>Care</h1><div class="tiles" style="--a:#7E9A7F">' +
+    '<button class="tile" data-do="care" data-arg="plan"><i>\u2600</i><b>Self-care plan' + (pi.length ? '<em>' + pi.length + '</em>' : '') + '</b><small>' + esc(pi[0] || 'A few small, real things') + '</small></button>' +
+    '<button class="tile" data-do="care" data-arg="remember"><i>\u2727</i><b>Remember' + (cr.length ? '<em>' + cr.length + '</em>' : '') + '</b><small>' + esc(cut(cr[0] ? cr[0].t : 'What you give them', 48)) + '</small></button>' +
+    '<button class="tile" data-do="care" data-arg="kinder"><i>\u275D</i><b>Kinder voice</b><small>' + esc(cut(reframe(), 48)) + '</small></button>' +
+    '<button class="tile" data-tab="archive"><i>\u270E</i><b>Journal</b><small>' + entries('journal').length + ' entries</small></button>' +
+    '<button class="tile" data-do="portal" data-arg="Me"><i>\u2661</i><b>Me</b><small>Wins, needs, self-talk</small></button></div>';
+}
+on('care', function (s) { open(function () { return vCareSec(s); }); });
+function vCareSec(s) {
+  var o = '<div class="page sec-page" style="--a:#7E9A7F"><div class="bar"><button class="link" data-do="closeO">\u2190 Care</button></div>';
+  if (s === 'plan') { var plan = entries('plan')[0], pi = plan ? plan.data.items : [], seeds = items(5).concat(items(6)).filter(function (x) { return pi.indexOf(x) < 0; });
+    o += '<h1>Self-care plan</h1>' + (pi.length ? '<ul class="plan">' + pi.map(function (x, i) { return '<li><span>' + esc(x) + '</span><button class="x" data-do="rmPlan" data-arg="' + i + '" aria-label="Remove">\u00d7</button></li>'; }).join('') + '</ul>' : '') +
+      (seeds.length ? '<div class="chips">' + seeds.slice(0, 6).map(function (x) { return '<button class="chip" data-do="addPlan" data-arg="' + esc(x) + '">+ ' + esc(x) + '</button>'; }).join('') + '</div>' : '') +
+      '<div class="inline"><input id="planx" placeholder="Add something"><button class="btn small" data-do="planx">Add</button></div>'; }
+  if (s === 'remember') { var cr = credits(); o += '<h1>Remember</h1>' + (cr.length ? '<ul class="wall">' + cr.slice(0, 30).map(function (c) { return '<li><span>' + esc(c.t) + '</span><small>' + esc(c.src) + '</small></li>'; }).join('') + '</ul>' : '<p class="empty">Answer reflections 1 and 2 to start this. <a href="#" data-do="gotoQ" data-arg="0">Start</a></p>'); }
+  if (s === 'kinder') { var harsh = latest(2).trim(); o += '<h1>Kinder voice</h1>' + (harsh ? '<p class="quote">' + nl(harsh) + '</p>' : '') + '<div class="script"><p class="serif">' + esc(reframe()) + '</p></div>' +
+    '<textarea id="ref" rows="3" placeholder="In your own words"></textarea><button class="btn primary" data-do="saveRef">Keep this version</button>'; }
+  return o + '</div>';
+}
+function vReflect() {
+  var n = doneCount(), o = '<h1>Reflect</h1><div class="prog"><span style="width:' + Math.round(100 * n / P.length) + '%"></span></div><p class="when">' + n + ' of ' + P.length + ' answered</p>';
+  if (n < P.length) o += '<button class="btn primary" data-do="resume">' + (n ? 'Continue' : 'Begin') + '</button>';
+  ['you', 'child'].forEach(function (s) {
+    o += '<p class="q">' + esc(fill(SEC[s])) + '</p><div class="stack">';
+    P.forEach(function (p, i) { if (p.s !== s) return; var a = ans(i), t = latest(i);
+      o += '<button class="rq' + (t ? ' done' : '') + '" data-do="gotoQ" data-arg="' + i + '"><i>' + (t ? '\u2713' : i + 1) + '</i><span><b>' + esc(fill(p.t)) + '</b>' + (t ? '<small>' + esc(cut(t, 80)) + '</small>' : drafts[i] ? '<small>Draft</small>' : '') + '</span></button>'; });
+    o += '</div>';
+  });
+  return o;
+}
+function journalCard(d) {
+  if (isShabbat(d)) return '<div class="card prompt-card shab"><p class="eyebrow">Shabbat</p><p class="serif">Nothing to fill in. Just be with them.</p></div>';
+  var h = d.getHours();
+  if (h >= 5 && h < 12 && !jToday('am')) return '<button class="card prompt-card" data-do="journal" data-arg="am"><p class="eyebrow">\u2600 Morning</p><p class="serif">Who do you want to be with the kids today?</p></button>';
+  if ((h >= 20 || h < 3) && !jToday('pm')) return '<button class="card prompt-card eve" data-do="journal" data-arg="pm"><p class="eyebrow">\u263E Evening</p><p class="serif">What went right today?</p></button>';
+  return '';
+}
 
 /* ---------- memories: photos + videos, private Drive via the backend ---------- */
 var PROUD = [['of', 'Proud of them'], ['from', 'Proud from them'], ['me', 'Proud of myself']];
