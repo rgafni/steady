@@ -60,14 +60,14 @@ function flush(force) {
       if (!j.ok) throw new Error(j.error || 'error');
       snap = j.result; jset('steady.snap', snap);
       queue = queue.filter(function (o) { return ops.indexOf(o) < 0; }); jset('steady.q', queue);
-      sync.state = 'ok'; sync.at = nowStr();
+      sync.state = 'ok'; sync.at = nowStr(); setTimeout(mediaFlush, 0);
     })
     .catch(function (e) { sync.state = 'offline'; sync.msg = String(e.message || e); })
     .then(function () { flushing = false; V = view(); var a = document.activeElement; if (!a || !/TEXTAREA|INPUT/.test(a.tagName)) render(); if (queue.length && sync.state === 'ok') flush(); });
 }
 
 /* ---------- shell ---------- */
-var TABS = [['today', 'Today', '\u2600'], ['moment', 'Right now', '\u2766'], ['moments', 'Moments', '\u2727'], ['care', 'Care', '\u2661'], ['reflect', 'Reflect', '\u270E']];
+var TABS = [['today', 'Today', '\u2600'], ['moment', 'Right now', '\u2766'], ['moments', 'Moments', '\u2727'], ['people', 'Portals', '\u25CE'], ['care', 'Care', '\u2661'], ['reflect', 'Reflect', '\u270E']];
 function syncLine() {
   var n = queue.length;
   if (sync.state === 'local') return 'Saved on this phone only';
@@ -79,7 +79,7 @@ function render() {
   V = view();
   if (!K) { $app.innerHTML = '<div class="locked"><div class="sun"></div><h1>Steady</h1><p>This is a private app. Open it from your personal link.</p></div>'; return; }
   if (overlay) { $app.innerHTML = overlay(); bindAll(); return; }
-  var body = ({ today: vToday, moment: vMoment, moments: vMoments, care: vCare, reflect: vReflect })[route.tab]();
+  var body = ({ today: vToday, moment: vMoment, moments: vMoments, care: vCare, reflect: vReflect, people: vPortal })[route.tab]();
   $app.innerHTML = '<main class="page">' + body + '<p class="sync">' + esc(syncLine()) + '</p></main><nav class="tabs">' + TABS.map(function (t) {
     return '<button data-tab="' + t[0] + '" class="' + (route.tab === t[0] ? 'on' : '') + '"><span>' + t[2] + '</span>' + t[1] + '</button>'; }).join('') + '</nav>';
   bindAll();
@@ -332,7 +332,7 @@ function vJournal(kind) {
       jf('intention', 'Who do I want to be with the kids today?', 'One word or one line is enough. Calm, present, playful\u2026') +
       '<label class="lbl">One child to give a small moment to <span class="opt">optional</span></label>' + kidChips('kid', jdraft.kid) +
       (idea ? '<p class="hint">Maybe: \u201c' + esc(idea) + '\u201d</p>' : '') +
-      jf('grateful', 'One thing I\u2019m grateful for', 'Big or tiny.');
+      jf('grateful', 'One thing I\u2019m grateful for', 'Big or tiny.') + aboutChips();
   } else {
     var gv = items(1), ci = careItems();
     o += '<p class="eyebrow">This evening</p><h1>What went right today.</h1><p class="small">There\u2019s no wrong answer, and you don\u2019t have to fill them all.</p>' +
@@ -340,11 +340,13 @@ function vJournal(kind) {
       jf('moment', 'One small moment of connection', 'A look, a joke, a ride. Small counts.') + kidChips('momentKid', jdraft.momentKid) +
       jf('gave', 'Something I gave them that I\u2019d usually overlook', gv.length ? 'Like you wrote: \u201c' + esc(pick(gv, today() + 'g')) + '\u201d' : 'Patience, a hug, being home for dinner\u2026') +
       jf('care', 'Something I did to take care of myself', ci.length ? 'Even a little: \u201c' + esc(pick(ci, today() + 'j')) + '\u201d' : 'Even five minutes counts.') +
-      jf('love', 'Something I love or admire about one of them <span class="opt">optional</span>', 'Goes into their letter.') + kidChips('loveKid', jdraft.loveKid || child());
+      jf('love', 'Something I love or admire about one of them <span class="opt">optional</span>', 'Goes into their letter.') + kidChips('loveKid', jdraft.loveKid || child()) + aboutChips();
   }
   return '<div class="page">' + o + '<button class="btn primary" data-do="saveJournal" data-arg="' + kind + '">Save</button></div>';
 }
 function readJ(kind) { ['intention', 'grateful', 'proud', 'moment', 'gave', 'care', 'love'].forEach(function (f) { var e = $app.querySelector('#j_' + f); if (e) jdraft[f] = e.value.trim(); }); }
+function aboutChips() { var a = jdraft.about || []; return '<label class="lbl">This entry is about <span class="opt">optional \u00b7 shows in their portal</span></label><div class="chips">' + kids().concat(['Me']).map(function (k) { return '<button class="chip' + (a.indexOf(k) >= 0 ? ' on' : '') + '" data-do="jabout" data-arg="' + esc(k) + '">' + esc(k) + '</button>'; }).join('') + '</div>'; }
+on('jabout', function (k) { var kind = jdraft.kind; readJ(); var a = (jdraft.about || []).slice(), i = a.indexOf(k); if (i >= 0) a.splice(i, 1); else a.push(k); jdraft.about = a; open(function () { return vJournal(kind); }); });
 on('jkid', function (a) { var p = a.split('|'), kind = jdraft.kind; readJ(); jdraft[p[0]] = jdraft[p[0]] === p[1] && p[0] !== 'loveKid' ? '' : p[1]; open(function () { return vJournal(kind); }); });
 on('saveJournal', function (kind) {
   readJ(); var all = ['intention', 'grateful', 'proud', 'moment', 'gave', 'care', 'love'].map(function (f) { return jdraft[f] || ''; }).join('\n');
@@ -365,34 +367,37 @@ on('backJ', function () { var k = jdraft.kind; open(function () { return vJourna
 on('keepKind', function () { var t = $app.querySelector('#kind').value.trim(); jdraft.kinder = t || kinderRewrite(); if (t) entry('reframe', { text: t }); commitJournal(); });
 on('skipKind', function () { commitJournal(); });
 function commitJournal() {
+  var back_ = jdraft.backTo; delete jdraft.backTo;
   var d = Object.assign({}, jdraft), eid = d.eid || uid(); delete d.eid; delete d.kindChecked;
   entry('journal', d, eid);
   if (d.kind === 'pm' && d.moment) { var me = 'jm_' + eid; entry('moment', { kid: d.momentKid || child(), text: d.moment, tag: 'From journal' }, me); }
   if (d.kind === 'pm' && d.love) entry('love', { kid: d.loveKid || child(), text: d.love, src: 'journal' }, 'jl_' + eid);
-  toast(d.kind === 'am' ? 'Have a good day.' : 'Saved. Rest well.'); go('today');
+  toast(d.kind === 'am' ? 'Have a good day.' : 'Saved. Rest well.'); if (back_) { route = { tab: 'people' }; ui.portal = back_; jset('steady.ui', ui); overlay = null; render(); window.scrollTo(0, 0); } else go('today');
 }
 function journalHistory() {
   var js = entries('journal').slice(0, 6);
   var o = '<div class="card"><p class="eyebrow">Gratitude journal</p><div class="row2"><button class="btn small" data-do="journal" data-arg="am">Morning</button><button class="btn small" data-do="journal" data-arg="pm">Evening</button></div>';
   o += js.map(function (j) { var x = j.data; return '<div class="jentry"><p class="small">' + esc(niceDate(j.at)) + ' \u00b7 ' + (x.kind === 'am' ? 'Morning' : 'Evening') + '</p>' +
-    [['intention', 'Today I want to be'], ['grateful', 'Grateful for'], ['proud', 'Proud of'], ['moment', 'A moment'], ['gave', 'I gave them'], ['care', 'For myself'], ['kinder', 'Kinder version']].filter(function (f) { return x[f[0]]; }).map(function (f) { return '<p><b>' + f[1] + ':</b> ' + esc(x[f[0]]) + '</p>'; }).join('') + '</div>'; }).join('');
+    [['intention', 'Today I want to be'], ['grateful', 'Grateful for'], ['proud', 'Proud of'], ['moment', 'A moment'], ['gave', 'I gave them'], ['care', 'For myself'], ['kinder', 'Kinder version']].filter(function (f) { return x[f[0]]; }).map(function (f) { return '<p><b>' + f[1] + ':</b> ' + esc(x[f[0]]) + '</p>'; }).join('') + ((x.about || []).length ? '<p class="small">About ' + esc(x.about.join(', ')) + '</p>' : '') + '</div>'; }).join('');
   return o + '</div>';
 }
 
 /* ---------- letters ---------- */
 var lkid = null;
 function loves(k) { return entries('love').filter(function (l) { return l.data.kid === k; }); }
-function lettersCard() {
-  var k = lkid || child(), ls = loves(k), lt = entries('letter').filter(function (l) { return l.data.kid === k; });
-  return '<div class="card letter-card"><p class="eyebrow">Letter to ' + esc(k) + '</p><div class="chips">' + kids().map(function (x) { return '<button class="chip' + (x === k ? ' on' : '') + '" data-do="lkid" data-arg="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
+function lettersCard(inPortal) {
+  var k = lkid || child(), ls = loves(k), lt = entries('letter').filter(function (l) { return l.data.kid === k; }), q = inPortal && isShabbat(NOW());
+  return '<div class="card letter-card"><p class="eyebrow">Letter to ' + esc(k) + '</p>' +
+    (inPortal ? '<p class="small">Built from what you notice and the moments you keep. ' + ls.length + ' thing' + (ls.length === 1 ? '' : 's') + ' noted so far.</p>' :
+    '<div class="chips">' + kids().map(function (x) { return '<button class="chip' + (x === k ? ' on' : '') + '" data-do="lkid" data-arg="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
     '<p class="small">Things you love or admire about ' + esc(k) + '. One line at a time, whenever you notice.</p>' +
-    '<div class="inline"><input id="lovex" placeholder="I love how she\u2026"><button class="btn small" data-do="addLove">Add</button></div>' +
-    (ls.length ? '<ul class="wall">' + ls.slice(0, 8).map(function (l) { return '<li><span>' + esc(l.data.text) + '</span><small>' + esc(niceDate(l.at)) + (l.data.src === 'journal' ? ' \u00b7 from your evening journal' : '') + '</small></li>'; }).join('') + '</ul>' + (ls.length > 8 ? '<p class="small">+ ' + (ls.length - 8) + ' more</p>' : '') : '') +
-    '<button class="btn primary" data-do="compose">Compose letter</button>' +
+    '<div class="inline"><input id="lovex" placeholder="I love how\u2026"><button class="btn small" data-do="addLove">Add</button></div>' +
+    (ls.length ? '<ul class="wall">' + ls.slice(0, 8).map(function (l) { return '<li><span>' + esc(l.data.text) + '</span><small>' + esc(niceDate(l.at)) + (l.data.src === 'journal' ? ' \u00b7 from your evening journal' : '') + '</small></li>'; }).join('') + '</ul>' + (ls.length > 8 ? '<p class="small">+ ' + (ls.length - 8) + ' more</p>' : '') : '')) +
+    (q ? '' : '<button class="btn primary" data-do="compose">Compose letter</button>') +
     (lt.length ? '<p class="small">Saved letters: ' + lt.map(function (l) { return '<a href="#" data-do="openLetter" data-arg="' + l.id + '">' + esc(l.data.occasion || 'Letter') + ' \u00b7 ' + esc(niceDate(l.at)) + '</a>'; }).join(', ') + '</p>' : '') + '</div>';
 }
 on('lkid', function (k) { lkid = k; render(); });
-on('addLove', function () { var v = $app.querySelector('#lovex').value.trim(); if (!v) return; entry('love', { kid: lkid || child(), text: v }); toast('Kept for the letter'); render(); });
+on('addLove', function () { var v = $app.querySelector('#lovex').value.trim(); if (!v) return; entry('love', { kid: route.tab === 'people' ? portal() : lkid || child(), text: v }); toast('Kept for the letter'); render(); });
 var OCC = { 'Birthday': ['Happy birthday. Another year of watching you grow, and I wanted to write down some of what I see.', 'I\u2019m so proud to be your father. I hope this year is full of good things.'],
   'A milestone': ['This is a big day, and before it passes I wanted to tell you some things I don\u2019t always say out loud.', 'Whatever comes next, I\u2019m right behind you.'],
   'A hard week': ['I know this week has been hard. You don\u2019t have to talk about it. I just wanted you to have this.', 'Hard weeks end. What I feel about you doesn\u2019t change. I\u2019m here whenever you want me.'],
@@ -419,6 +424,176 @@ function vLetter() {
 on('occ', function (x) { var cur = $app.querySelector('#ltext').value; if (cur === letter.text || confirm('Start over with the ' + x + ' opening? Your edits will be replaced.')) { letter.occasion = x; letter.text = buildLetter(letter.kid, x); open(vLetter); } });
 on('saveLetter', function () { var t = $app.querySelector('#ltext').value; letter.text = t; entry('letter', { kid: letter.kid, occasion: letter.occasion, text: t }, letter.eid || (letter.eid = uid())); toast('Letter kept privately'); });
 on('copyLetter', function () { var t = $app.querySelector('#ltext').value; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast('Copied'); }, function () { toast('Select the text and copy it'); }); });
+
+/* ---------- portals: one per child, and one for you ---------- */
+function ages() { var m = {}; String(V.config.ages || LS.getItem('steady.ages') || '').split(',').forEach(function (p) { var x = p.split(':'); if (x[1]) m[x[0].trim()] = parseInt(x[1], 10); }); return m; }
+function portal() { var p = ui.portal, ks = kids(); return p === 'Me' || ks.indexOf(p) >= 0 ? p : ks.indexOf(child()) >= 0 ? child() : ks[0]; }
+function bubbles(cur) {
+  return '<div class="bubbles" role="tablist">' + kids().concat(['Me']).map(function (k) { var me = k === 'Me';
+    return '<button role="tab" class="bubble' + (k === cur ? ' on' : '') + (me ? ' me' : '') + '" data-do="portal" data-arg="' + esc(k) + '"><i>' + (me ? '\u2661' : esc(k.charAt(0))) + '</i><span>' + esc(k) + '</span></button>'; }).join('') + '</div>';
+}
+on('portal', function (k) { ui.portal = k; jset('steady.ui', ui); render(); window.scrollTo(0, 0); });
+function stage(a) { return a == null || isNaN(a) ? 'kid' : a < 5 ? 'little' : a < 10 ? 'kid' : 'teen'; }
+var NEEDS = { little: ['Floor time, at their level', 'Slow, sing-song transitions', 'Being held when it\u2019s too much', 'Same bedtime words every night', 'Me noticing out loud what they\u2019re doing'],
+  kid: ['Undivided attention for ten minutes', 'Me being curious, not correcting', 'Help naming big feelings', 'A predictable rhythm'],
+  teen: ['Space without distance', 'Me available, not pushing', 'Being taken seriously', 'Side-by-side time with no agenda', 'Trust, a little more than feels comfortable', 'Repair when I get it wrong'] };
+var NOTICE_PH = { little: 'The way they light up when\u2026', kid: 'I notice how\u2026', teen: 'I noticed how thoughtfully\u2026' };
+function forKid(type, k) { return entries(type).filter(function (e) { return e.data.kid === k; }); }
+function journalFor(k) { return entries('journal').filter(function (j) { var x = j.data; return (x.about || []).indexOf(k) >= 0 || (k !== 'Me' && (x.kid === k || x.momentKid === k || x.loveKid === k)); }); }
+function jline(j) { var x = j.data, f = [['intention', 'Wanted to be'], ['grateful', 'Grateful for'], ['proud', 'Proud of'], ['moment', 'A moment'], ['gave', 'I gave them'], ['care', 'For myself'], ['love', 'I love'], ['kinder', 'Kinder version']];
+  return '<div class="jentry"><p class="small">' + esc(niceDate(j.at)) + ' \u00b7 ' + (x.kind === 'am' ? 'Morning' : 'Evening') + '</p>' + f.filter(function (y) { return x[y[0]]; }).map(function (y) { return '<p><b>' + y[1] + ':</b> ' + esc(x[y[0]]) + '</p>'; }).join('') + '</div>'; }
+function shabbatNote(q) { return q ? '<div class="card soft"><p class="eyebrow">Shabbat</p><p>Nothing to add or fill in. Everything here is just for reading, if you want it.</p></div>' : ''; }
+function vPortal() {
+  var k = portal(), q = isShabbat(NOW());
+  return '<div class="ptab">' + bubbles(k) + '</div>' + shabbatNote(q) + (k === 'Me' ? vMe(q) : vKid(k, q));
+}
+function vKid(k, q) {
+  var a = ages()[k], st = stage(a), ls = loves(k), nd = forKid('need', k), ms = forKid('moment', k), js = journalFor(k), o = '';
+  o += '<header class="hello"><p class="date">' + esc(k) + (a ? ' \u00b7 ' + a : '') + '</p><h1>' + esc(k) + '\u2019s place</h1><p>What you see in ' + esc(k) + ', the time you share, and what ' + esc(k) + ' needs from you now.</p></header>';
+  o += '<div class="card credit"><p class="eyebrow">What I notice and appreciate</p>' + (q ? '' : '<div class="inline"><input id="lovex" placeholder="' + esc(NOTICE_PH[st]) + '"><button class="btn small" data-do="addLove">Add</button></div>') +
+    (ls.length ? '<ul class="wall">' + ls.slice(0, 12).map(function (l) { return '<li><span>' + esc(l.data.text) + '</span><small>' + esc(niceDate(l.at)) + (l.data.src === 'journal' ? ' \u00b7 from your evening journal' : '') + '</small></li>'; }).join('') + '</ul>' : '<p class="small">Small things count most. They also go into your letter to ' + esc(k) + '.</p>') + '</div>';
+  o += '<div class="card"><p class="eyebrow">What ' + esc(k) + ' needs from me now</p>' + (nd.length ? '<ul class="plan">' + nd.map(function (n) { return '<li><span>' + esc(n.data.text) + '</span>' + (q ? '' : '<button class="x" data-do="rmNeed" data-arg="' + n.id + '" aria-label="Remove">\u00d7</button>') + '</li>'; }).join('') + '</ul>' : '<p class="small">Not a to-do list. Just what feels true right now, in this season.</p>') +
+    (q ? '' : '<div class="chips">' + NEEDS[st].filter(function (x) { return !nd.some(function (n) { return n.data.text === x; }); }).slice(0, 5).map(function (x) { return '<button class="chip" data-do="addNeed" data-arg="' + esc(x) + '">+ ' + esc(x) + '</button>'; }).join('') + '</div><div class="inline"><input id="needx" placeholder="In my own words"><button class="btn small" data-do="needx">Add</button></div>') + '</div>';
+  o += memoriesCard(k, q);
+  o += '<div class="card"><p class="eyebrow">Moments together</p>' + (q ? '' : '<textarea id="mtext" rows="2" placeholder="What happened? Even a minute counts."></textarea><div class="chips">' + TAGS.map(function (t) { return '<button class="chip tag" data-do="tag" data-arg="' + t + '">' + t + '</button>'; }).join('') + '</div><button class="btn small" data-do="saveMomentK">Save moment</button>') +
+    (ms.length ? ms.slice(0, 12).map(function (m) { return '<div class="moment"><p class="small">' + esc(niceDate(m.at)) + (m.data.tag ? ' \u00b7 ' + esc(m.data.tag) : '') + '</p><p>' + nl(m.data.text) + '</p></div>'; }).join('') : '<p class="small">None logged yet. They still happened.</p>') + '</div>';
+  o += '<div class="card"><p class="eyebrow">From my journal</p>' + (js.length ? js.slice(0, 8).map(jline).join('') : '<p class="small">Tag a morning or evening entry with ' + esc(k) + ' and it will gather here.</p>') +
+    (q ? '' : '<div class="row2"><button class="btn small" data-do="jfor" data-arg="am">Morning</button><button class="btn small" data-do="jfor" data-arg="pm">Evening</button></div>') + '</div>';
+  lkid = k; o += lettersCard(true);
+  return o;
+}
+on('addNeed', function (t) { entry('need', { kid: portal(), text: t }); toast('Kept.'); render(); });
+on('needx', function () { var v = $app.querySelector('#needx').value.trim(); if (v) { entry('need', { kid: portal(), text: v }); toast('Kept.'); render(); } });
+on('rmNeed', function (id) { delEntry(id); render(); });
+on('saveMomentK', function () { var t = $app.querySelector('#mtext').value.trim(), tg = $app.querySelector('.chip.tag.on'); if (!t && !tg) { toast('Write a few words or pick a tag'); return; } entry('moment', { kid: portal(), text: t, tag: tg ? tg.dataset.arg : '' }); toast('Saved. That mattered.'); render(); });
+on('jfor', function (kind) { var k = portal(), ex = jToday(kind); jdraft = ex ? Object.assign({}, ex.data, { eid: ex.id }) : { kind: kind }; var a = (jdraft.about || []).slice(); if (a.indexOf(k) < 0) a.push(k); jdraft.about = a; jdraft.backTo = k; open(function () { return vJournal(kind); }); });
+
+var SELF = ['You are allowed to be a work in progress and a good father at the same time.', 'Tired is not the same as failing.', 'You would never hold a friend to the standard you hold yourself to.', 'Coming back after a hard moment is the skill. You keep doing it.', 'Rest is not something you have to earn.'];
+var TONES = [['gentle', 'Gently'], ['okay', 'Getting by'], ['hard', 'Hard on myself']];
+function vMe(q) {
+  var ws = entries('win'), wk = ws.filter(function (w) { return daysAgo(w.at) < 7; }), nd = forKid('need', 'Me'), sc = entries('selfcheck'), js = journalFor('Me').concat(entries('journal').filter(function (j) { return j.data.care && (j.data.about || []).indexOf('Me') < 0; })).sort(function (a, b) { return a.at < b.at ? 1 : -1; }), seeds = items(6).concat(items(5)), harsh = latest(2).trim(), last = sc[0];
+  var o = '<header class="hello"><p class="date">Me</p><h1>Your place</h1><p>The father they love needs someone looking out for him too.</p></header>';
+  o += '<div class="card credit"><p class="eyebrow">Self-compassion</p><p class="serif">' + esc(pick(SELF, today() + 's')) + '</p></div>';
+  o += '<div class="card"><p class="eyebrow">How am I treating myself today?</p>' + (q ? '' : '<div class="chips">' + TONES.map(function (t) { return '<button class="chip' + (last && day(last.at) === today() && last.data.tone === t[0] ? ' on' : '') + '" data-do="tone" data-arg="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>') +
+    (last && day(last.at) === today() && last.data.tone === 'hard' ? '<p class="hint">Thank you for noticing. That alone is a kinder move. What would you say to a friend who felt this way tonight?</p>' : '') +
+    (sc.length ? '<p class="small">Lately: ' + sc.slice(0, 7).map(function (s) { return esc(niceDate(s.at)) + ' ' + ({ gentle: '\u2661', okay: '\u00b7', hard: '\u25CB' })[s.data.tone]; }).join('  ') + '</p>' : '') + '</div>';
+  o += '<div class="card"><p class="eyebrow">Self-talk, gently</p>' + (harsh ? '<p class="small">What you tend to tell yourself:</p><p class="quote">' + nl(harsh) + '</p>' : '') +
+    (q ? '' : '<textarea id="talk" rows="3" placeholder="What am I telling myself right now?"></textarea><button class="btn small" data-do="checkTalk">Look at it kindly</button>') +
+    '<p class="eyebrow" style="margin-top:14px">Kinder versions I\u2019ve kept</p>' + (entries('reframe').length ? '<ul class="wall">' + entries('reframe').slice(0, 6).map(function (r) { return '<li><span>' + esc(r.data.text) + '</span><small>' + esc(niceDate(r.at)) + '</small></li>'; }).join('') + '</ul>' : '<p class="serif">' + esc(reframe()) + '</p>') + '</div>';
+  o += '<div class="card"><p class="eyebrow">Wins \u00b7 ' + winsToday().length + ' today \u00b7 ' + wk.length + ' this week</p>' + (q ? '' : '<div class="chips">' + WINS.map(function (x) { return '<button class="chip" data-do="win" data-arg="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>') +
+    (ws.length ? '<p class="small">' + ws.slice(0, 10).map(function (w) { return esc(w.data.label); }).join(' \u00b7 ') + '</p>' : '<p class="small">Tap anything that\u2019s true. It counts.</p>') + '</div>';
+  o += '<div class="card"><p class="eyebrow">What I need</p>' + (nd.length ? '<ul class="plan">' + nd.map(function (n) { return '<li><span>' + esc(n.data.text) + '</span>' + (q ? '' : '<button class="x" data-do="rmNeed" data-arg="' + n.id + '" aria-label="Remove">\u00d7</button>') + '</li>'; }).join('') + '</ul>' : '<p class="small">Needs you put aside don\u2019t disappear. Name one.</p>') +
+    (q ? '' : (seeds.length ? '<div class="chips">' + seeds.slice(0, 5).map(function (x) { return '<button class="chip" data-do="addNeed" data-arg="' + esc(x) + '">+ ' + esc(x) + '</button>'; }).join('') + '</div>' : '') + '<div class="inline"><input id="needx" placeholder="e.g. An hour that\u2019s just mine"><button class="btn small" data-do="needx">Add</button></div>') + '</div>';
+  o += memoriesCard('Me', q);
+  o += '<div class="card"><p class="eyebrow">From my journal</p>' + (js.length ? js.slice(0, 6).map(jline).join('') : '<p class="small">Entries tagged \u201cMe\u201d, and anything you did to take care of yourself, gather here.</p>') + '</div>';
+  return o;
+}
+on('tone', function (t) { var l = entries('selfcheck')[0]; entry('selfcheck', { tone: t }, l && day(l.at) === today() ? l.id : uid()); toast(t === 'hard' ? 'Noticed. Go easy tonight.' : 'Noted.'); render(); });
+on('checkTalk', function () { var t = $app.querySelector('#talk').value.trim(); if (!t) return; var m = t.match(HARSH);
+  if (!m) { entry('reframe', { text: t }); toast('Kept. That sounds kind.'); render(); return; }
+  open(function () { return '<div class="page"><div class="ptop"><button class="link" data-do="closeO">\u2190 Back</button></div><p class="eyebrow">A gentle pause</p><h1>You wrote \u201c' + esc(m[0]) + '.\u201d</h1><p class="quote">' + nl(t) + '</p><p>If someone you love said that about themselves, how would you answer them?</p>' +
+    '<div class="script"><p class="eyebrow">A kinder way to say it</p><p class="serif">' + esc(kinderRewrite()) + '</p></div><textarea id="kind" rows="4" placeholder="Or write it your way, the way you\u2019d say it to a friend"></textarea><button class="btn primary" data-do="keepTalk">Keep the kinder version</button></div>'; }); });
+on('keepTalk', function () { var t = $app.querySelector('#kind').value.trim(); entry('reframe', { text: t || kinderRewrite() }); toast('Kept.'); close(); });
+
+/* ---------- memories: photos + videos, private Drive via the backend ---------- */
+var PROUD = [['of', 'Proud of them'], ['from', 'Proud from them'], ['me', 'Proud of myself']];
+var idb = null;
+function db() { if (idb) return idb; idb = new Promise(function (res, rej) { var r = indexedDB.open('steady-media', 1); r.onupgradeneeded = function () { r.result.createObjectStore('m', { keyPath: 'id' }); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); return idb; }
+function idbDo(mode, fn) { return db().then(function (d) { return new Promise(function (res, rej) { var t = d.transaction('m', mode), s = t.objectStore('m'), r = fn(s); t.oncomplete = function () { res(r && r.result); }; t.onerror = function () { rej(t.error); }; }); }); }
+var pendingN = 0, localURL = {};
+function memories(k) { return entries('memory').filter(function (m) { return m.data.kid === k; }).sort(function (a, b) { var x = (a.data.date || day(a.at)) + a.at, y = (b.data.date || day(b.at)) + b.at; return x < y ? 1 : -1; }); }
+function memoriesCard(k, q) {
+  var ms = memories(k), o = '<div class="card mem-card"><p class="eyebrow">Memories</p>';
+  if (!q) o += '<button class="btn small" data-do="addMem">+ Add a photo or video</button>';
+  var waiting = ms.filter(function (m) { return !m.data.fileId; }).length;
+  if (waiting) o += '<p class="hint">' + waiting + ' kept safely on this phone for now. ' + (sync.state === 'ok' ? 'Uploading to your private Drive\u2026' : 'They\u2019ll move to your private Drive on their own once the backend is set up.') + '</p>';
+  if (!ms.length) return o + '<p class="small">A timeline of days worth keeping. Each one with what made you proud.</p></div>';
+  var cur = '';
+  ms.slice(0, 60).forEach(function (m) { var d = m.data, dd = d.date || day(m.at);
+    if (dd !== cur) { o += (cur ? '</div>' : '') + '<p class="tday">' + esc(new Date(dd + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })) + '</p><div class="tl">'; cur = dd; }
+    o += '<button class="mem" data-do="openMem" data-arg="' + m.id + '">' + (d.thumb ? '<span class="th" style="background-image:url(' + esc(d.thumb) + ')">' + (/^video/.test(d.mime) ? '<b>\u25B6</b>' : '') + '</span>' : '') +
+      '<span class="mtx"><small>' + esc((PROUD.filter(function (p) { return p[0] === d.proud; })[0] || ['', ''])[1]) + '</small>' + esc(d.note || '') + '</span></button>'; });
+  return o + '</div></div>';
+}
+var mem = null;
+on('addMem', function () { mem = { kid: portal(), date: today(), proud: portal() === 'Me' ? 'me' : 'of', files: [] }; open(vMem); });
+function vMem() {
+  var who = kids().concat(['Me']);
+  return '<div class="page">' + back() + '<p class="eyebrow">A memory</p><h1>Something worth keeping.</h1>' +
+    '<label class="lbl">Who</label><div class="chips">' + who.map(function (k) { return '<button class="chip' + (k === mem.kid ? ' on' : '') + '" data-do="memWho" data-arg="' + esc(k) + '">' + esc(k) + '</button>'; }).join('') + '</div>' +
+    '<label class="lbl" for="mdate">Day</label><input id="mdate" type="date" value="' + esc(mem.date) + '" max="' + today() + '">' +
+    '<label class="lbl" for="mfile">Photos or videos</label><input id="mfile" type="file" accept="image/*,video/*" multiple>' +
+    '<div class="tl">' + mem.files.map(function (f) { return '<span class="th sm" style="background-image:url(' + f.thumb + ')">' + (/^video/.test(f.mime) ? '<b>\u25B6</b>' : '') + '</span>'; }).join('') + '</div>' +
+    '<label class="lbl">Proud\u2026</label><div class="chips">' + PROUD.map(function (p) { return '<button class="chip' + (p[0] === mem.proud ? ' on' : '') + '" data-do="memProud" data-arg="' + p[0] + '">' + p[1] + '</button>'; }).join('') + '</div>' +
+    '<textarea id="mnote" rows="3" placeholder="' + (mem.proud === 'me' ? 'What I\u2019m proud of in myself here\u2026' : mem.proud === 'from' ? 'What they did that made me proud\u2026' : 'What I\u2019m proud of in them\u2026') + '">' + esc(mem.note || '') + '</textarea>' +
+    '<button class="btn primary" data-do="saveMem">Keep this memory</button><p class="small center">Stored only in your private Google Drive, never in the app\u2019s public code.</p></div>';
+}
+function keepMemForm() { var n = $app.querySelector('#mnote'), d = $app.querySelector('#mdate'); if (n) mem.note = n.value; if (d && d.value) mem.date = d.value; }
+on('memWho', function (k) { keepMemForm(); mem.kid = k; if (k === 'Me') mem.proud = 'me'; else if (mem.proud === 'me') mem.proud = 'of'; open(vMem); });
+on('memProud', function (p) { keepMemForm(); mem.proud = p; open(vMem); });
+function thumbOf(file) {
+  return new Promise(function (res) {
+    var url = URL.createObjectURL(file), v = /^video/.test(file.type), el = document.createElement(v ? 'video' : 'img');
+    function draw() { var w = el.videoWidth || el.naturalWidth, h = el.videoHeight || el.naturalHeight, s = 220 / Math.max(w, h, 1), c = document.createElement('canvas'); c.width = Math.round(w * s) || 220; c.height = Math.round(h * s) || 220;
+      try { c.getContext('2d').drawImage(el, 0, 0, c.width, c.height); var qq = .7, out = c.toDataURL('image/jpeg', qq); while (out.length > 11000 && qq > .2) { qq -= .1; out = c.toDataURL('image/jpeg', qq); } res(out); } catch (e) { res(''); } URL.revokeObjectURL(url); }
+    el.onerror = function () { res(''); };
+    if (v) { el.muted = true; el.playsInline = true; el.preload = 'auto'; el.onloadeddata = function () { el.currentTime = Math.min(.5, (el.duration || 1) / 2); }; el.onseeked = draw; } else el.onload = draw;
+    el.src = url; setTimeout(function () { res(''); }, 8000);
+  });
+}
+function shrink(file) { /* photos: keep up to 2000px, enough for keeping; videos stay as they are */
+  if (!/^image\/(jpeg|png|webp)/.test(file.type)) return Promise.resolve(file);
+  return createImageBitmap(file).then(function (b) { var s = Math.min(1, 2000 / Math.max(b.width, b.height)); if (s === 1 && file.size < 3e6) return file; var c = document.createElement('canvas'); c.width = Math.round(b.width * s); c.height = Math.round(b.height * s); c.getContext('2d').drawImage(b, 0, 0, c.width, c.height);
+    return new Promise(function (r) { c.toBlob(function (x) { r(x || file); }, 'image/jpeg', .86); }); }).catch(function () { return file; });
+}
+$app.addEventListener('change', function (ev) {
+  if (ev.target.id !== 'mfile') return; keepMemForm(); var fs = [].slice.call(ev.target.files || []);
+  Promise.all(fs.map(function (f) { if (f.size > 30e6) { toast('That video is a bit long for here. A shorter clip will fit.'); return null; } return Promise.all([shrink(f), thumbOf(f)]).then(function (r) { return { blob: r[0], thumb: r[1], mime: r[0].type || f.type, name: f.name }; }); }))
+    .then(function (r) { mem.files = mem.files.concat(r.filter(Boolean)); open(vMem); });
+});
+on('saveMem', function () {
+  keepMemForm(); if (!mem.files.length && !(mem.note || '').trim()) { toast('Add a photo, a video, or a few words'); return; }
+  var list = mem.files.length ? mem.files : [null];
+  Promise.all(list.map(function (f, i) { var eid = uid(), d = { kid: mem.kid, date: mem.date, proud: mem.proud, note: (mem.note || '').trim() };
+    if (f) { d.thumb = f.thumb; d.mime = f.mime; d.local = true; }
+    entry('memory', d, eid);
+    return f ? idbDo('readwrite', function (s) { return s.put({ id: uid(), eid: eid, blob: f.blob, mime: f.mime, name: f.name, who: mem.kid, date: mem.date }); }) : null; }))
+    .then(function () { toast('Kept. What a day.'); var k = mem.kid; mem = null; route = { tab: 'people' }; ui.portal = k; jset('steady.ui', ui); overlay = null; render(); mediaFlush(); })
+    .catch(function () { toast('Couldn\u2019t keep the file on this phone. The note is saved.'); close(); });
+});
+function b64(blob) { return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(String(r.result).split(',')[1]); }; r.onerror = rej; r.readAsDataURL(blob); }); }
+function post(body) { return fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow', referrerPolicy: 'no-referrer', credentials: 'omit', cache: 'no-store', body: JSON.stringify(Object.assign({ k: K }, body)) }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error || 'error'); return j; }); }
+var mflushing = false;
+function mediaFlush() {
+  if (!API || !K || mflushing || sync.state !== 'ok' || !window.indexedDB) return;
+  mflushing = true; var sent = 0;
+  idbDo('readonly', function (s) { return s.getAll(); }).then(function (all) {
+    pendingN = (all || []).length;
+    return (all || []).reduce(function (p, it) { return p.then(function () {
+      if (queue.some(function (o) { return o.eid === it.eid; })) return; /* entry first, then its file */
+      return b64(it.blob).then(function (data) { return post({ media: { id: it.id, eid: it.eid, mime: it.mime, name: it.name, who: it.who, date: it.date, b64: data } }); })
+        .then(function () { sent++; return idbDo('readwrite', function (s) { return s.delete(it.id); }); });
+    }); }, Promise.resolve());
+  }).then(function () { if (sent) flush(true); }, function () {}).then(function () { mflushing = false; });
+}
+on('openMem', function (id) { var m = entries('memory').filter(function (x) { return x.id === id; })[0]; if (!m) return; open(function () { return vMemView(m); }); loadMedia(m); });
+function vMemView(m) {
+  var d = m.data, src = localURL[m.id], v = /^video/.test(d.mime || '');
+  return '<div class="page">' + back() + '<p class="eyebrow">' + esc(d.kid) + ' \u00b7 ' + esc(niceDate(d.date || m.at)) + '</p>' +
+    (d.mime ? '<div class="viewer">' + (src ? (v ? '<video src="' + src + '" controls playsinline></video>' : '<img src="' + src + '" alt="">') : '<span class="th big" style="background-image:url(' + esc(d.thumb || '') + ')"></span><p class="small center">' + (src === false ? (d.fileId ? 'This one is in your private Drive. <a href="https://drive.google.com/file/d/' + esc(d.fileId) + '/view" target="_blank" rel="noopener noreferrer">Open it there</a>' : 'Waiting on the phone it was added from.') : 'Opening privately\u2026') + '</p>') + '</div>' : '') +
+    '<div class="script"><p class="eyebrow">' + esc((PROUD.filter(function (p) { return p[0] === d.proud; })[0] || ['', 'Memory'])[1]) + '</p><p class="serif">' + nl(d.note || '') + '</p></div>' +
+    (isShabbat(NOW()) ? '' : '<button class="btn ghost" data-do="rmMem" data-arg="' + m.id + '">Remove from the timeline</button>') + '</div>';
+}
+function loadMedia(m) {
+  if (localURL[m.id] || !m.data.mime) return;
+  function done(u) { localURL[m.id] = u; if (overlay) { var s = window.scrollY; render(); window.scrollTo(0, s); } }
+  idbDo('readonly', function (s) { return s.getAll(); }).then(function (all) { var it = (all || []).filter(function (x) { return x.eid === m.id; })[0];
+    if (it) return done(URL.createObjectURL(it.blob));
+    if (!m.data.fileId || !API) return done(false);
+    return post({ get: m.data.fileId }).then(function (j) { if (!j.file.b64) return done(false); var bin = atob(j.file.b64), u8 = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); done(URL.createObjectURL(new Blob([u8], { type: j.file.mime }))); });
+  }).catch(function () { done(false); });
+}
+on('rmMem', function (id) { if (!confirm('Remove this memory from the timeline? (Any uploaded file stays in your private Drive folder.)')) return; delEntry(id); close(); });
 
 /* ---------- Ask Katya ---------- */
 on('ask', function () { open(vAsk); });
