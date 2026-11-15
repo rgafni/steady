@@ -238,3 +238,7 @@ textarea.letter{font:17px/1.6 var(--serif)}
  .chip.on{background:var(--ink);color:var(--bg)}
  .bucket>.bh{background:linear-gradient(var(--bg) 80%,rgba(28,26,24,0))}
 }
+
+/* your data */
+.sync.link{display:block;margin:28px auto 0;padding:10px 4px;font:500 13px var(--sans);color:var(--soft);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line)}
+label.btn{text-align:center}

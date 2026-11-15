@@ -125,13 +125,14 @@ on('home', function () { go('home'); });
 
 /* ---------- Today ---------- */
 function greeting() { var h = NOW().getHours(); return h < 5 ? 'Still up' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
+function uniqText(arr, f) { var seen = {}; return arr.filter(function (x) { var k = String(f ? f(x) : x).trim().toLowerCase(); if (!k || seen[k]) return false; seen[k] = 1; return true; }); }
 function credits() {
   var c = items(1).map(function (t) { return { t: t, src: 'You give them' }; });
   var p = latest(0).trim(); if (p) c.unshift({ t: p, src: 'What you are proud of' });
   entries('journal').filter(function (j) { return j.data.kind === 'pm'; }).slice(0, 20).forEach(function (j) {
     if (j.data.proud) c.push({ t: j.data.proud, src: 'Proud of \u00b7 ' + niceDate(j.at) }); if (j.data.gave) c.push({ t: j.data.gave, src: 'You gave them \u00b7 ' + niceDate(j.at) }); });
   entries('win').slice(0, 30).forEach(function (w) { c.push({ t: w.data.label, src: niceDate(w.at) }); });
-  return c;
+  return uniqText(c, function (x) { return x.t; });
 }
 var WINS = ['Stayed calm', 'Gave space', 'Showed up', 'Made them laugh', 'Repaired after a hard moment', 'Held a limit kindly', 'Said I love you', 'Took care of myself'];
 function winsToday() { return entries('win').filter(function (w) { return day(w.at) === today(); }); }
@@ -184,10 +185,10 @@ function vHelp(k) {
       '<div class="card soft"><p><b>Is this mine to solve tonight?</b> If not, it can wait on the page. If yes, what is one small next step?</p></div>' + yours(7, 'What you gave yourself permission to do');
     var pk = entries('parked').slice(0, 3); if (pk.length) o += '<p class="eyebrow">Recently set down</p>' + pk.map(function (p) { return '<p class="small">' + esc(niceDate(p.at)) + ': ' + esc(p.data.text) + '</p>'; }).join('');
   }
-  return '<div class="page">' + o + '<button class="btn ghost" data-do="ask">Ask Katya about this</button></div>';
+  return '<div class="page">' + o + (isShabbat(NOW()) ? '' : '<button class="btn ghost" data-do="ask">Ask Katya about this</button>') + '</div>';
 }
 function reframe() {
-  var r = entries('reframe')[0]; if (r) return r.data.text;
+  var r = entries('reframe').filter(function (x) { return String(x.data.text || '').trim(); })[0]; if (r) return r.data.text;
   return 'You care so much that you\u2019re still thinking about it. That\u2019s what a good father does. You can make it right, and one hard moment doesn\u2019t undo all the love you give them.';
 }
 on('feel', function (f) { ui.limitFeel = f; ui.limitText = ($app.querySelector('#lim') || {}).value || ui.limitText; jset('steady.ui', ui); render(); });
@@ -266,7 +267,7 @@ on('saveJournal', function (kind) {
   if (m && !jdraft.kindChecked) { open(function () { return vKinder(m[0], all); }); return; }
   commitJournal();
 });
-function kinderRewrite() { var r = entries('reframe')[0]; return r ? r.data.text : 'Today had a hard moment, and I care enough to notice it. That\u2019s what a loving father does. I can repair it, and it doesn\u2019t undo the love I give them every day.'; }
+function kinderRewrite() { var r = entries('reframe').filter(function (x) { return String(x.data.text || '').trim(); })[0]; return r ? r.data.text : 'Today had a hard moment, and I care enough to notice it. That\u2019s what a loving father does. I can repair it, and it doesn\u2019t undo the love I give them every day.'; }
 function vKinder(word) {
   return '<div class="page"><div class="ptop"><button class="link" data-do="backJ">\u2190 Back to my entry</button></div><p class="eyebrow">A gentle pause</p><h1>You wrote \u201c' + esc(word) + '.\u201d</h1>' +
     '<p>If someone you love said that about themselves, how would you answer them?</p>' +
@@ -317,8 +318,8 @@ var letter = null;
 on('compose', function () { var k = lkid || child(); letter = { kid: k, occasion: 'Just because' }; letter.text = buildLetter(k, letter.occasion); open(vLetter); });
 on('openLetter', function (id) { var l = entries('letter').filter(function (x) { return x.id === id; })[0]; if (!l) return; letter = Object.assign({ eid: l.id }, l.data); open(vLetter); });
 function buildLetter(k, occ) {
-  var ls = loves(k).slice().reverse().map(function (l) { return l.data.text.replace(/\.$/, ''); });
-  var ms = entries('moment').filter(function (m) { return m.data.kid === k && m.data.text; }).slice(0, 4).reverse().map(function (m) { return m.data.text.replace(/\.$/, ''); });
+  var ls = uniqText(loves(k).slice().reverse().map(function (l) { return l.data.text.replace(/\.$/, ''); }));
+  var ms = uniqText(entries('moment').filter(function (m) { return m.data.kid === k && m.data.text; }).map(function (m) { return m.data.text.replace(/\.$/, ''); })).slice(0, 4).reverse();
   var o = OCC[occ], t = 'Dear ' + k + ',\n\n' + o[0] + '\n\n';
   if (ls.length) t += 'Some things I love about you:\n' + ls.map(function (x) { return '\u2022 ' + x; }).join('\n') + '\n\n';
   if (ms.length) t += 'Some small moments with you that I keep with me:\n' + ms.map(function (x) { return '\u2022 ' + x; }).join('\n') + '\n\n';
@@ -326,8 +327,8 @@ function buildLetter(k, occ) {
   return t + o[1] + '\n\nI love you always,\nAbba';
 }
 function vLetter() {
-  return '<div class="page"><div class="ptop"><button class="link" data-do="closeO">\u2190 Back</button></div><p class="eyebrow">Letter to ' + esc(letter.kid) + '</p><h1>Your words, gathered.</h1>' +
-    '<p class="small">Everything you\u2019ve noted is in here. Edit it however you like and keep it for the right moment.</p>' +
+  return '<div class="page"><div class="ptop"><button class="link" data-do="closeO">\u2190 Back</button></div><h1>Letter to ' + esc(letter.kid) + '</h1>' +
+    '<p class="small">Built from what you noticed and the moments you kept. Edit anything.</p>' +
     '<div class="chips">' + Object.keys(OCC).map(function (x) { return '<button class="chip' + (x === letter.occasion ? ' on' : '') + '" data-do="occ" data-arg="' + x + '">' + x + '</button>'; }).join('') + '</div>' +
     '<textarea id="ltext" class="letter" rows="18">' + esc(letter.text) + '</textarea>' +
     '<button class="btn primary" data-do="saveLetter">Keep this letter</button><button class="btn ghost" data-do="copyLetter">Copy text</button></div>';
@@ -362,7 +363,8 @@ function vSec(k, s) {
     o += nd.length ? '<ul class="plan">' + nd.map(function (n) { return '<li><span>' + esc(n.data.text) + '</span>' + (q ? '' : '<button class="x" data-do="rmNeed" data-arg="' + n.id + '" >Remove</button>') + '</li>'; }).join('') + '</ul>' : '';
     if (!q) o += '<div class="chips">' + sd.filter(function (x) { return !nd.some(function (n) { return n.data.text === x; }); }).slice(0, 5).map(function (x) { return '<button class="chip" data-do="addNeed" data-arg="' + esc(x) + '">+ ' + esc(x) + '</button>'; }).join('') + '</div><div class="inline"><input id="needx" placeholder="In my own words"><button class="btn small" data-do="needx">Add</button></div>'; }
   if (s === 'mem') o += memoriesCard(k, q);
-  if (s === 'moments') { var mo = forKid('moment', k); title = 'Moments together';
+  if (s === 'moments') { var mo = forKid('moment', k), oi = k === child() ? uniqText(items(12).concat(items(11))) : []; title = 'Moments together';
+    if (!q && oi.length) o += '<p class="lbl">Your one-on-one ideas</p><div class="chips">' + oi.slice(0, 8).map(function (x) { return '<button class="chip" data-do="useIdea" data-arg="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>';
     if (!q) o += '<textarea id="mtext" rows="2" placeholder="What happened?"></textarea><div class="chips">' + TAGS.map(function (t) { return '<button class="chip tag" data-do="tag" data-arg="' + t + '">' + t + '</button>'; }).join('') + '</div><button class="btn primary" data-do="saveMomentK">Save moment</button>';
     o += mo.length ? '<div class="list">' + mo.map(function (m) { return '<div class="moment"><p class="when">' + esc(niceDate(m.at)) + (m.data.tag ? ' \u00b7 ' + esc(m.data.tag) : '') + '</p>' + (m.data.text ? '<p>' + nl(m.data.text) + '</p>' : '') + '</div>'; }).join('') + '</div>' : ''; }
   if (s === 'journal') { var js = journalFor(k);
@@ -374,7 +376,7 @@ function vSec(k, s) {
     if (!q) o += '<p class="q">How am I treating myself today?</p><div class="chips">' + TONES.map(function (t) { return '<button class="chip' + (last && day(last.at) === today() && last.data.tone === t[0] ? ' on' : '') + '" data-do="tone" data-arg="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>';
     if (last && day(last.at) === today() && last.data.tone === 'hard') o += '<div class="script"><p class="serif">What would you say to a friend who felt this way tonight?</p></div>';
     if (sc.length) o += '<p class="when">Lately: ' + sc.slice(0, 7).map(function (x) { return ({ gentle: 'Gently', okay: 'Getting by', hard: 'Hard on myself' })[x.data.tone]; }).join(', ') + '</p>'; }
-  if (s === 'talk') { var harsh = latest(2).trim(), rf = entries('reframe');
+  if (s === 'talk') { var harsh = latest(2).trim(), rf = entries('reframe').filter(function (x) { return String(x.data.text || '').trim(); });
     if (harsh) o += '<p class="quote">' + nl(harsh) + '</p>';
     if (!q) o += '<textarea id="talk" rows="3" placeholder="What am I telling myself?"></textarea><button class="btn primary" data-do="checkTalk">Look at it kindly</button>';
     o += '<p class="q">Kinder versions</p>' + (rf.length ? '<ul class="wall">' + rf.slice(0, 8).map(function (r) { return '<li><span>' + esc(r.data.text) + '</span><small>' + esc(niceDate(r.at)) + '</small></li>'; }).join('') + '</ul>' : '<p class="serif">' + esc(reframe()) + '</p>'); }
@@ -387,6 +389,7 @@ function vSec(k, s) {
 on('addNeed', function (t) { entry('need', { kid: portal(), text: t }); render(); });
 on('needx', function () { var v = $app.querySelector('#needx').value.trim(); if (v) { entry('need', { kid: portal(), text: v }); toast('Kept'); render(); } });
 on('rmNeed', function (id) { delEntry(id); render(); });
+on('useIdea', function (x) { var t = $app.querySelector('#mtext'); if (t) { t.value = x; t.focus(); } $app.querySelectorAll('.chip.tag').forEach(function (c) { c.classList.toggle('on', c.dataset.arg === 'One-on-one'); }); });
 on('saveMomentK', function () { var t = $app.querySelector('#mtext').value.trim(), tg = $app.querySelector('.chip.tag.on'); if (!t && !tg) { toast('A few words or a tag'); return; } entry('moment', { kid: portal(), text: t, tag: tg ? tg.dataset.arg : '' }); toast('Saved'); render(); });
 on('jfor', function (kind) { var k = portal(), ex = jToday(kind); jdraft = ex ? Object.assign({}, ex.data, { eid: ex.id }) : { kind: kind }; var a = (jdraft.about || []).slice(); if (a.indexOf(k) < 0) a.push(k); jdraft.about = a; jdraft.backTo = k; open(function () { return vJournal(kind); }); });
 var SELF = ['You are allowed to be a work in progress and a good father at the same time.', 'Tired is not the same as failing.', 'You would never hold a friend to the standard you hold yourself to.', 'Coming back after a hard moment is the skill. You keep doing it.', 'Rest is not something you have to earn.'];
@@ -453,11 +456,11 @@ function vMem() {
   return '<div class="page"><div class="bar"><button class="link" data-do="memBack">\u2190 Back</button></div><h1>A memory</h1>' +
     '<label class="lbl">Who</label><div class="chips">' + who.map(function (k) { return '<button class="chip' + (k === mem.kid ? ' on' : '') + '" data-do="memWho" data-arg="' + esc(k) + '">' + esc(k) + '</button>'; }).join('') + '</div>' +
     '<label class="lbl" for="mdate">Day</label><input id="mdate" type="date" value="' + esc(mem.date) + '" max="' + today() + '">' +
-    '<label class="lbl" for="mfile">Photos or videos</label><input id="mfile" type="file" accept="image/*,video/*" multiple>' +
+    '<label class="lbl">Photos or videos</label><label class="btn" for="mfile">' + (mem.files.length ? 'Add more' : 'Choose photos or videos') + '</label><input id="mfile" type="file" accept="image/*,video/*" multiple hidden>' +
     '<div class="tl">' + mem.files.map(function (f) { return '<span class="th sm" style="background-image:url(' + f.thumb + ')">' + (/^video/.test(f.mime) ? '<b>Video</b>' : '') + '</span>'; }).join('') + '</div>' +
     '<label class="lbl">Proud\u2026</label><div class="chips">' + PROUD.map(function (p) { return '<button class="chip' + (p[0] === mem.proud ? ' on' : '') + '" data-do="memProud" data-arg="' + p[0] + '">' + p[1] + '</button>'; }).join('') + '</div>' +
     '<textarea id="mnote" rows="3" placeholder="' + (mem.proud === 'me' ? 'What I\u2019m proud of in myself here\u2026' : mem.proud === 'from' ? 'What they did that made me proud\u2026' : 'What I\u2019m proud of in them\u2026') + '">' + esc(mem.note || '') + '</textarea>' +
-    '<button class="btn primary" data-do="saveMem">Keep this memory</button><p class="quiet center">Private \u00b7 your Google Drive only</p></div>';
+    '<button class="btn primary" data-do="saveMem">Keep this memory</button><p class="quiet center">' + (sync.state === 'ok' ? 'Private \u00b7 your Google Drive only' : 'Kept on this phone for now') + '</p></div>';
 }
 function keepMemForm() { var n = $app.querySelector('#mnote'), d = $app.querySelector('#mdate'); if (n) mem.note = n.value; if (d && d.value) mem.date = d.value; }
 on('memBack', function () { var f = mem && mem.from; mem = null; overlay = f; render(); });
@@ -525,7 +528,9 @@ function loadMedia(m) {
     return post({ get: m.data.fileId }).then(function (j) { if (!j.file.b64) return done(false); var bin = atob(j.file.b64), u8 = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); done(URL.createObjectURL(new Blob([u8], { type: j.file.mime }))); });
   }).catch(function () { done(false); });
 }
-on('rmMem', function (id) { if (!confirm('Remove this memory from the timeline? (Any uploaded file stays in your private Drive folder.)')) return; delEntry(id); close(); });
+on('rmMem', function (id) { var m = entries('memory').filter(function (x) { return x.id === id; })[0], up = m && m.data.fileId;
+  if (!confirm(up ? 'Remove this memory? The file in your private Drive folder stays.' : 'Remove this memory? Its photo or video on this phone is removed too. Copies you already saved keep it.')) return;
+  delEntry(id); mediaAll().then(function (all) { all.filter(function (x) { return x.eid === id; }).forEach(function (x) { idbDo('readwrite', function (s) { return s.delete(x.id); }); }); }); close(); });
 
 /* ---------- Ask Katya ---------- */
 on('ask', function () { open(vAsk); });
@@ -542,6 +547,71 @@ function standalone() { return matchMedia('(display-mode: standalone)').matches 
 window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; if (!overlay) render(); });
 on('install', function () { if (deferred) { deferred.prompt(); deferred = null; } });
 on('noInstall', function () { ui.noInstall = true; jset('steady.ui', ui); render(); });
+
+/* ---------- Save a copy / restore: a file on this phone, never sent anywhere ---------- */
+var COPY_KEYS = ['steady.q', 'steady.snap', 'steady.drafts', 'steady.c', 'steady.kids', 'steady.ages', 'steady.spouse'];
+var copyMsg = '';
+function mediaAll() { return window.indexedDB ? idbDo('readonly', function (s) { return s.getAll(); }).then(function (a) { return a || []; }, function () { return []; }) : Promise.resolve([]); }
+function vData() {
+  var n = allItems().length, ph = entries('memory').filter(function (m) { return m.data.mime; }).length, last = ui.lastCopy;
+  return '<div class="page">' + back() + '<h1>Your data</h1>' +
+    '<p>' + esc(syncLine().replace(/\.$/, '')) + '. ' + plural(n, 'entry', 'entries') + ', ' + plural(ph, 'photo or video', 'photos and videos') + '.</p>' +
+    '<p class="small">' + (last ? 'Last copy saved ' + esc(niceDate(last)) + '.' : 'No copy saved yet.') + '</p>' +
+    '<button class="btn primary" data-do="saveCopy">Save a copy</button>' +
+    '<p class="small">One file in your Downloads, with your words and photos. It is not locked, so keep it somewhere private. Nothing is sent anywhere.</p>' +
+    '<label class="btn" for="copyfile">Restore from a copy</label><input id="copyfile" type="file" accept=".json,application/json" hidden>' +
+    '<p class="small">Adds what is in the file. Nothing on this phone is deleted.</p>' +
+    (copyMsg ? '<p class="quiet">' + esc(copyMsg) + '</p>' : '') + '</div>';
+}
+on('data', function () { copyMsg = ''; open(vData); });
+on('saveCopy', function (_, btn) {
+  btn.disabled = true; btn.textContent = 'Saving\u2026';
+  var data = {}; COPY_KEYS.forEach(function (k) { var v = LS.getItem(k); if (v != null) data[k] = v; });
+  mediaAll().then(function (all) {
+    return Promise.all(all.map(function (m) { return b64(m.blob).then(function (x) { return { id: m.id, eid: m.eid, mime: m.mime, name: m.name, who: m.who, date: m.date, b64: x }; }, function () { return null; }); }));
+  }).then(function (media) {
+    media = media.filter(Boolean);
+    var head = JSON.stringify({ format: 'steady-copy', version: 1, savedAt: nowStr(), data: data }).slice(0, -1), parts = [head, ',"media":['];
+    media.forEach(function (m, i) { parts.push((i ? ',' : '') + JSON.stringify(m)); });
+    parts.push(']}');
+    var blob = new Blob(parts, { type: 'application/json' }), a = document.createElement('a'), u = URL.createObjectURL(blob);
+    a.href = u; a.download = 'steady-copy-' + today() + '.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    ui.lastCopy = nowStr(); jset('steady.ui', ui);
+    copyMsg = 'Saved steady-copy-' + today() + '.json (' + (blob.size > 1e6 ? (blob.size / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(blob.size / 1e3)) + ' KB') + ', ' + plural(media.length, 'photo or video', 'photos and videos') + ').';
+    open(vData);
+  }).catch(function () { copyMsg = 'Could not save the copy. Nothing changed.'; open(vData); });
+});
+function mergeById(a, b, key) { var seen = {}, out = (a || []).slice(); out.forEach(function (x) { seen[x[key]] = 1; }); (b || []).forEach(function (x) { if (x && x[key] != null && !seen[x[key]]) { seen[x[key]] = 1; out.push(x); } }); return out; }
+$app.addEventListener('change', function (ev) {
+  if (ev.target.id !== 'copyfile' || !ev.target.files || !ev.target.files[0]) return;
+  var f = ev.target.files[0];
+  f.text().then(function (t) {
+    var c = JSON.parse(t); if (!c || c.format !== 'steady-copy' || !c.data) throw new Error('not a copy');
+    var d = c.data, inQ = JSON.parse(d['steady.q'] || '[]'), inS = JSON.parse(d['steady.snap'] || '{}'), inD = JSON.parse(d['steady.drafts'] || '{}');
+    if (!Array.isArray(inQ)) throw new Error('bad');
+    var media = (c.media || []).filter(function (m) { return m && m.id && m.b64 && /^(image|video)\//.test(m.mime || ''); });
+    var newOps = inQ.filter(function (o) { return o && o.id && !queue.some(function (x) { return x.id === o.id; }); }).length;
+    if (!confirm('Restore from the copy saved ' + niceDate(c.savedAt) + '? It adds ' + plural(newOps, 'item') + ' and ' + plural(media.length, 'photo or video', 'photos and videos') + '. Nothing here is deleted.')) return 'cancel';
+    var mq = mergeById(queue, inQ, 'id').map(function (o, i) { return { o: o, i: i }; });
+    mq.sort(function (x, y) { var a = String(x.o.at || ''), b = String(y.o.at || ''); return a < b ? -1 : a > b ? 1 : x.i - y.i; });
+    var ns = { config: Object.assign({}, inS.config || {}, snap.config || {}), answers: mergeById(snap.answers, inS.answers, 'id'), entries: mergeById(snap.entries, inS.entries, 'id'), katya: mergeById(snap.katya, inS.katya, 'id') };
+    var nd = Object.assign({}, inD, drafts);
+    if (!jset('steady.q', mq.map(function (x) { return x.o; })) || !jset('steady.snap', ns) || !jset('steady.drafts', nd)) throw new Error('full');
+    queue = mq.map(function (x) { return x.o; }); snap = ns; drafts = nd;
+    ['steady.c', 'steady.kids', 'steady.ages', 'steady.spouse'].forEach(function (k) { if (d[k] && !LS.getItem(k)) LS.setItem(k, d[k]); });
+    return mediaAll().then(function (have) {
+      var ids = {}; have.forEach(function (m) { ids[m.id] = 1; });
+      return media.filter(function (m) { return !ids[m.id]; }).reduce(function (p, m) { return p.then(function () {
+        var bin = atob(m.b64), u8 = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        return idbDo('readwrite', function (s) { return s.put({ id: m.id, eid: m.eid, blob: new Blob([u8], { type: m.mime }), mime: m.mime, name: m.name, who: m.who, date: m.date }); });
+      }); }, Promise.resolve());
+    }).then(function () { return 'ok'; });
+  }).then(function (r) {
+    if (r === 'cancel') return;
+    V = view(); copyMsg = 'Restored. Everything from the copy is here.'; open(vData); flush();
+  }).catch(function (e) { copyMsg = String(e && e.message) === 'full' ? 'Phone storage is full. The restore did not finish. Nothing was deleted.' : 'That file is not a Steady copy. Nothing changed.'; open(vData); });
+});
+
 /* ================= v6: organized by date ================= */
 function topBar() {
   if (route.tab === 'home') return '<div class="bar brand"><span class="mark" aria-hidden="true"></span><span>Steady</span></div>';
@@ -553,7 +623,7 @@ function render() {
   var bare = overlay === vWelcome || overlay === vAllDone;
   if (overlay) { $app.innerHTML = '<div class="shell' + (bare ? ' bare' : '') + '">' + overlay() + '</div>'; bindAll(); return; }
   var body = ({ home: vHome, moment: vMoment, care: vCare, reflect: vReflect, person: vPortal, memories: vMemories, archive: vArchive })[route.tab] || vHome; body = body();
-  $app.innerHTML = '<main class="page shell">' + topBar() + '<div class="fade">' + body + '</div><p class="sync">' + esc(syncLine()) + '</p></main>';
+  $app.innerHTML = '<main class="page shell">' + topBar() + '<div class="fade">' + body + '</div>' + (route.tab === 'home' ? '<button class="sync link" data-do="data">' + esc(syncLine()) + ' \u00b7 Save a copy</button>' : '<p class="sync">' + esc(syncLine()) + '</p>') + '</main>';
   bindAll();
 }
 function back() { return '<div class="bar"><button class="link back" data-do="closeO">\u2190 Back</button></div>'; }
@@ -737,7 +807,7 @@ on('personTimeline', function (k) { ui.af = { who: [k], types: [], q: '' }; ui.a
 function vMoment() {
   return '<header class="ph"><h1>Right now</h1></header><div class="stack">' +
     HELP.map(function (h) { return '<button class="rn" data-do="help" data-arg="' + h[0] + '"><span><b>' + esc(fill(h[1])) + '</b><small>' + esc(h[2]) + '</small></span><span class="chev" aria-hidden="true">\u203A</span></button>'; }).join('') + '</div>' +
-    '<button class="btn ghost" data-do="ask">Ask Katya</button>';
+    (isShabbat(NOW()) ? '' : '<button class="btn ghost" data-do="ask">Ask Katya</button>');
 }
 function vCare() {
   var plan = entries('plan')[0], pi = plan ? plan.data.items : [], cr = credits();
