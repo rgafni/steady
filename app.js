@@ -67,7 +67,6 @@ function flush(force) {
 }
 
 /* ---------- shell ---------- */
-var TABS = [['today', 'Today', '\u2600'], ['moment', 'Right now', '\u2766'], ['moments', 'Moments', '\u2727'], ['people', 'Portals', '\u25CE'], ['care', 'Care', '\u2661'], ['reflect', 'Reflect', '\u270E']];
 function syncLine() {
   var n = queue.length;
   if (sync.state === 'local') return 'Saved on this phone only';
@@ -75,7 +74,7 @@ function syncLine() {
   if (sync.state === 'syncing') return 'Saving privately\u2026';
   return 'Saved privately';
 }
-function go(tab) { route = { tab: tab }; overlay = null; render(); window.scrollTo(0, 0); }
+function go(tab) { route = { tab: ({ today: 'home', people: 'home', support: 'home', letters: 'home', moments: 'home' })[tab] || tab }; overlay = null; render(); window.scrollTo(0, 0); }
 function open(fn) { overlay = fn; render(); window.scrollTo(0, 0); }
 function close() { overlay = null; render(); window.scrollTo(0, 0); }
 
@@ -93,27 +92,25 @@ function nextOpen(from) { for (var i = 1; i <= P.length; i++) { var q = (from + 
 function doneCount() { var n = 0; for (var i = 0; i < P.length; i++) if (answered(i)) n++; return n; }
 function vWelcome() {
   return '<div class="intro"><div class="sun big"></div><h1>Take your time.</h1>' +
-    '<p>These are seventeen questions to sit with, one at a time. There are no right answers and no deadline.</p>' +
-    '<p>Write as much or as little as you like. Skip any of them. Everything saves as you go, and you can come back and change your mind whenever you want.</p>' +
-    '<p>Each answer quietly shapes the rest of the app: the words you use, the ideas it offers, the reminders it gives you.</p>' +
-    '<p class="small">Only you can see what you write.</p>' +
+    '<p>Seventeen questions to sit with, one at a time. No right answers, no deadline. Skip any of them and come back whenever you like.</p>' +
+    '<p>Your answers shape the rest of the app. Only you can see them.</p>' +
     '<button class="btn primary" data-do="startIntake">Begin</button><button class="btn ghost" data-do="skipIntro">Look around first</button></div>';
 }
 on('startIntake', function () { ui.welcomed = true; jset('steady.ui', ui); openQ(answered(ui.lastQ || 0) ? Math.max(0, nextOpen(ui.lastQ || 0)) : (ui.lastQ || 0)); });
 on('skipIntro', function () { ui.welcomed = true; jset('steady.ui', ui); close(); });
 
-function openQ(q) { ui.lastQ = q; jset('steady.ui', ui); open(function () { return vPrompt(q); }); }
+function openQ(q) { q = P[+q] ? +q : 0; ui.lastQ = q; jset('steady.ui', ui); open(function () { return vPrompt(q); }); }
 function vPrompt(q) {
   var p = P[q], val = drafts[q] != null ? drafts[q] : latest(q), first = q === 0 || P[q - 1].s !== p.s, hist = ans(q);
   var ph = p.three ? '1.\n2.\n3.' : p.list ? 'One idea per line' : 'Whatever comes to mind\u2026';
   return '<div class="prompt">' +
     '<div class="ptop"><button class="link" data-do="pauseQ">\u2190 Pause</button><span>' + (q + 1) + ' of ' + P.length + '</span></div>' +
-    '<div class="dots">' + P.map(function (_, i) { return '<i class="' + (i === q ? 'cur ' : '') + (answered(i) ? 'done' : '') + '"></i>'; }).join('') + '</div>' +
     '<p class="sec">' + esc(fill(SEC[p.s])) + '</p>' +
     '<h2 class="ptext">' + esc(fill(p.t)) + '</h2>' +
     '<details class="why"' + (first ? '' : '') + '><summary>Why this matters</summary><p>' + esc(fill(p.n)) + '</p></details>' +
     '<textarea data-q="' + q + '" rows="9" placeholder="' + esc(ph) + '">' + esc(val) + '</textarea>' +
-    '<p class="saved">' + (hist.length ? 'Last saved ' + esc(niceDate(hist[hist.length - 1].at)) + (hist.length > 1 ? ' \u00b7 ' + hist.length + ' versions' : '') : 'Nothing saved yet. Take a breath first if you like.') + '</p>' +
+    '<p class="saved">' + (hist.length ? 'Last saved ' + esc(niceDate(hist[hist.length - 1].at)) + '' : 'Not saved yet') + '</p>' +
+    (hist.length > 1 ? '<details class="hist"><summary>Earlier answers (' + (hist.length - 1) + ')</summary>' + hist.slice(0, -1).reverse().map(function (x) { return '<div class="old"><p class="when">' + esc(niceDate(x.at)) + '</p><p>' + nl(x.text) + '</p></div>'; }).join('') + '</details>' : '') +
     '<button class="btn primary" data-do="saveNext" data-arg="' + q + '">Save and continue</button>' +
     '<div class="row2"><button class="btn ghost" data-do="prevQ" data-arg="' + q + '"' + (q === 0 ? ' disabled' : '') + '>Back</button><button class="btn ghost" data-do="skipQ" data-arg="' + q + '">Come back to this later</button></div>' +
     '</div>';
@@ -122,7 +119,7 @@ function curText() { var t = $app.querySelector('textarea[data-q]'); return t ? 
 on('saveNext', function (q) { q = +q; var t = curText(); if (saveAnswer(q, t)) toast('Saved'); if (q + 1 >= P.length) { var n = nextOpen(q); if (n < 0) { open(vAllDone); return; } openQ(n); } else openQ(q + 1); });
 on('skipQ', function (q) { q = +q; var t = curText(); if (t.trim()) { drafts[q] = t; jset('steady.drafts', drafts); } if (q + 1 < P.length) openQ(q + 1); else { var n = nextOpen(q); n < 0 || n === q ? open(vAllDone) : openQ(n); } });
 on('prevQ', function (q) { q = +q; var t = curText(); if (t.trim() && t !== latest(q)) { drafts[q] = t; jset('steady.drafts', drafts); } if (q > 0) openQ(q - 1); });
-on('pauseQ', function () { var t = $app.querySelector('textarea[data-q]'); if (t && t.value.trim() && t.value !== latest(+t.dataset.q)) saveAnswer(+t.dataset.q, t.value); toast('Saved. Come back whenever you like.'); go(route.tab || 'home'); });
+on('pauseQ', function () { var t = $app.querySelector('textarea[data-q]'); if (t && t.value.trim() && t.value !== latest(+t.dataset.q)) saveAnswer(+t.dataset.q, t.value); toast('Saved'); go(route.tab || 'home'); });
 function vAllDone() { return '<div class="intro"><div class="sun big"></div><h1>That was a lot to sit with.</h1><p>Thank you for giving it the time. You can come back to any of these whenever you like. Your answers will look different in a few months, and that is good.</p><button class="btn primary" data-do="home">Go to Today</button></div>'; }
 on('home', function () { go('home'); });
 
@@ -144,8 +141,8 @@ function oneOnOneIdeas() {
   return a.length ? a : ['A drive together, music of her choice', 'Get a treat, just the two of you', 'Walk around the block after dinner', 'Ask her to teach you something she likes', 'Sit with her while she does her thing'];
 }
 function careItems() { var a = []; var plan = entries('plan')[0]; if (plan) a = a.concat(plan.data.items || []); return a.concat(items(5), items(6)).filter(Boolean); }
-on('resume', function () { var q = drafts[ui.lastQ] != null || !answered(ui.lastQ) ? ui.lastQ : nextOpen(ui.lastQ); openQ(q < 0 ? 0 : q); });
-on('win', function (label) { entry('win', { label: label }); toast('Counted.'); render(); });
+on('resume', function () { var l = P[+ui.lastQ] ? +ui.lastQ : 0, q = drafts[l] != null || !answered(l) ? l : nextOpen(l); openQ(q < 0 ? 0 : q); });
+on('win', function (label) { entry('win', { label: label }); toast('Saved'); render(); });
 on('logOne', function () { route = { tab: 'moments', preset: { kid: child(), tag: 'One-on-one' } }; render(); });
 
 /* ---------- In the moment ---------- */
@@ -162,10 +159,10 @@ on('closeO', function () { close(); });
 function vHelp(k) {
   var c = esc(child()), o = back();
   if (k === 'quiet') {
-    o += '<h1>' + c + ' is closed off</h1><div class="breath">Breathe in\u2026 and out. Her quiet is about what she\u2019s carrying, not about you.</div>' +
+    o += '<h1>' + c + ' is closed off</h1><div class="breath">Her quiet is about what she\u2019s carrying, not about you.</div>' +
       '<div class="script"><p class="eyebrow">You could say</p><p class="serif">\u201cYou don\u2019t have to talk right now. I\u2019m here whenever you want.\u201d</p><p class="small">Then let it be. Stay nearby, keep it easy. Offer a snack or a ride, not a question.</p></div>' +
       yours(10, 'In your own words') + yours(8, 'What usually comes up in you') +
-      '<div class="card soft"><p>That feeling is real, and it\u2019s not a verdict on your relationship. Space is part of how she grows.</p></div>' + yours(11, 'When she tends to open up');
+      yours(11, 'When she tends to open up');
   } else if (k === 'limit') {
     var f = ui.limitFeel || 'upset', l = ui.limitText || '';
     o += '<h1>Holding a limit</h1><p>She can be upset with a boundary and still feel deeply loved and understood within it.</p>' +
@@ -182,7 +179,7 @@ function vHelp(k) {
       '<div class="script"><p class="eyebrow">A simple repair, when you\u2019re ready</p><p class="serif">\u201cEarlier I got short with you. I\u2019m sorry. That wasn\u2019t about you. I love you.\u201d</p><p class="small">Repair teaches more than never slipping would.</p></div>' + yours(3, 'Your expectations of yourself');
     var cr = credits(); if (cr.length) o += '<div class="card credit"><p class="eyebrow">Also true</p><p class="serif">' + esc(pick(cr, uid()).t) + '</p></div>';
   } else {
-    o += '<h1>Your mind is racing</h1><div class="breath">Three slow breaths. Feel your feet on the floor.</div>' + yours(4, 'What it\u2019s usually trying to solve') +
+    o += '<h1>Your mind is racing</h1>' + yours(4, 'What it\u2019s usually trying to solve') +
       '<label class="lbl" for="park">Set it down here</label><textarea id="park" rows="3" placeholder="What\u2019s spinning? Write it, then let the page hold it."></textarea><button class="btn small" data-do="park">Set it down</button>' +
       '<div class="card soft"><p><b>Is this mine to solve tonight?</b> If not, it can wait on the page. If yes, what is one small next step?</p></div>' + yours(7, 'What you gave yourself permission to do');
     var pk = entries('parked').slice(0, 3); if (pk.length) o += '<p class="eyebrow">Recently set down</p>' + pk.map(function (p) { return '<p class="small">' + esc(niceDate(p.at)) + ': ' + esc(p.data.text) + '</p>'; }).join('');
@@ -195,32 +192,18 @@ function reframe() {
 }
 on('feel', function (f) { ui.limitFeel = f; ui.limitText = ($app.querySelector('#lim') || {}).value || ui.limitText; jset('steady.ui', ui); render(); });
 on('buildLimit', function () { ui.limitText = $app.querySelector('#lim').value.trim(); jset('steady.ui', ui); render(); });
-on('park', function () { var t = $app.querySelector('#park').value.trim(); if (!t) return; entry('parked', { text: t }); toast('Set down. It\u2019ll keep.'); render(); });
+on('park', function () { var t = $app.querySelector('#park').value.trim(); if (!t) return; entry('parked', { text: t }); toast('Saved'); render(); });
 
 /* ---------- Small moments ---------- */
 var TAGS = ['One-on-one', 'We laughed', 'Opened up', 'Just together', 'Repaired'];
-function vMoments() {
-  var pre = route.preset || {}, ms = entries('moment'), wk = ms.filter(function (m) { return daysAgo(m.at) < 7; }).length, kd = pre.kid || ui.kid || child();
-  var o = '<h1>Small moments</h1>' +
-    '<div class="card"><p class="eyebrow">Log a moment</p><div class="chips">' + kids().map(function (k) { return '<button class="chip' + (k === kd ? ' on' : '') + '" data-do="kid" data-arg="' + esc(k) + '">' + esc(k) + '</button>'; }).join('') + '</div>' +
-    '<textarea id="mtext" rows="3" placeholder="What happened? Even a minute counts."></textarea>' +
-    '<div class="chips">' + TAGS.map(function (t) { return '<button class="chip tag' + (t === pre.tag ? ' on' : '') + '" data-do="tag" data-arg="' + t + '">' + t + '</button>'; }).join('') + '</div>' +
-    '<button class="btn primary" data-do="saveMoment">Save moment</button></div>' +
-    '<p class="count">' + (wk ? wk + ' small moment' + (wk > 1 ? 's' : '') + ' this week' : 'None logged this week yet. They still happened.') + '</p>' +
-    '<div class="card"><p class="eyebrow">One-on-one ideas with ' + esc(child()) + '</p><ul class="ideas">' + oneOnOneIdeas().slice(0, 8).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
-    (items(12).length || items(11).length ? '<p class="small">From your own answers.</p>' : '<p class="small">Starter ideas. <a href="#" data-do="gotoQ" data-arg="12">Add your own</a></p>') + '</div>';
-  o += lettersCard();
-  o += ms.slice(0, 40).map(function (m) { return '<div class="moment"><p class="small">' + esc(niceDate(m.at)) + ' \u00b7 ' + esc(m.data.kid) + (m.data.tag ? ' \u00b7 ' + esc(m.data.tag) : '') + '</p><p>' + nl(m.data.text) + '</p></div>'; }).join('');
-  return o;
-}
 on('kid', function (k) { var t = $app.querySelector('#mtext').value; ui.kid = k; jset('steady.ui', ui); route.preset = Object.assign({}, route.preset, { kid: k }); render(); $app.querySelector('#mtext').value = t; });
 on('tag', function (t, b) { var on_ = b.classList.contains('on'); $app.querySelectorAll('.chip.tag').forEach(function (x) { x.classList.remove('on'); }); if (!on_) b.classList.add('on'); route.preset = Object.assign({}, route.preset, { tag: on_ ? '' : t }); });
 on('saveMoment', function () { var t = $app.querySelector('#mtext').value.trim(); var tg = $app.querySelector('.chip.tag.on'); if (!t && !tg) { toast('Write a few words or pick a tag'); return; }
-  entry('moment', { kid: (route.preset || {}).kid || ui.kid || child(), text: t, tag: tg ? tg.dataset.arg : '' }); route.preset = {}; toast('Saved. That mattered.'); render(); });
+  entry('moment', { kid: (route.preset || {}).kid || ui.kid || child(), text: t, tag: tg ? tg.dataset.arg : '' }); route.preset = {}; toast('Saved'); render(); });
 
 /* ---------- Care: self-compassion + self-care ---------- */
-on('winx', function () { var v = $app.querySelector('#winx').value.trim(); if (v) { entry('win', { label: v }); toast('Counted.'); render(); } });
-on('saveRef', function () { var v = $app.querySelector('#ref').value.trim(); if (v) { entry('reframe', { text: v }); toast('Kept.'); render(); } });
+on('winx', function () { var v = $app.querySelector('#winx').value.trim(); if (v) { entry('win', { label: v }); toast('Saved'); render(); } });
+on('saveRef', function () { var v = $app.querySelector('#ref').value.trim(); if (v) { entry('reframe', { text: v }); toast('Kept'); render(); } });
 function setPlan(list) { var p = entries('plan')[0]; entry('plan', { items: list }, p ? p.id : 'plan'); render(); }
 on('addPlan', function (s) { var p = entries('plan')[0]; setPlan((p ? p.data.items : []).concat([s])); });
 on('planx', function () { var v = $app.querySelector('#planx').value.trim(); if (v) { var p = entries('plan')[0]; setPlan((p ? p.data.items : []).concat([v])); } });
@@ -256,14 +239,14 @@ function vJournal(kind) {
   var o = back();
   if (kind === 'am') {
     var idea = jdraft.kid ? pick(jdraft.kid === child() ? oneOnOneIdeas() : ['A few minutes of their favorite thing, together', 'Ask about something they care about, then just listen', 'A silly moment at breakfast'], today() + jdraft.kid) : '';
-    o += '<p class="eyebrow">Good morning</p><h1>Just a minute.</h1>' +
+    o += '<p class="eyebrow">Good morning</p><h1>Just a minute</h1>' +
       jf('intention', 'Who do I want to be with the kids today?', 'One word or one line is enough. Calm, present, playful\u2026') +
       '<label class="lbl">One child to give a small moment to <span class="opt">optional</span></label>' + kidChips('kid', jdraft.kid) +
       (idea ? '<p class="hint">Maybe: \u201c' + esc(idea) + '\u201d</p>' : '') +
       jf('grateful', 'One thing I\u2019m grateful for', 'Big or tiny.') + aboutChips();
   } else {
     var gv = items(1), ci = careItems();
-    o += '<p class="eyebrow">This evening</p><h1>What went right today.</h1><p class="small">There\u2019s no wrong answer, and you don\u2019t have to fill them all.</p>' +
+    o += '<p class="eyebrow">This evening</p><h1>What went right today</h1><p class="small">Any of these can stay blank.</p>' +
       jf('proud', 'Something I\u2019m proud of as a dad today', '') +
       jf('moment', 'One small moment of connection', 'A look, a joke, a ride. Small counts.') + kidChips('momentKid', jdraft.momentKid) +
       jf('gave', 'Something I gave them that I\u2019d usually overlook', gv.length ? 'Like you wrote: \u201c' + esc(pick(gv, today() + 'g')) + '\u201d' : 'Patience, a hug, being home for dinner\u2026') +
@@ -396,25 +379,24 @@ function vSec(k, s) {
     if (!q) o += '<textarea id="talk" rows="3" placeholder="What am I telling myself?"></textarea><button class="btn primary" data-do="checkTalk">Look at it kindly</button>';
     o += '<p class="q">Kinder versions</p>' + (rf.length ? '<ul class="wall">' + rf.slice(0, 8).map(function (r) { return '<li><span>' + esc(r.data.text) + '</span><small>' + esc(niceDate(r.at)) + '</small></li>'; }).join('') + '</ul>' : '<p class="serif">' + esc(reframe()) + '</p>'); }
   if (s === 'wins') { var ws = entries('win'), wk = ws.filter(function (w) { return daysAgo(w.at) < 7; }).length;
-    o += '<p class="stat"><b>' + winsToday().length + '</b> today <b>' + wk + '</b> this week</p>';
     if (!q) o += '<div class="chips">' + WINS.map(function (x) { return '<button class="chip" data-do="win" data-arg="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div><div class="inline"><input id="winx" placeholder="Something else"><button class="btn small" data-do="winx">Add</button></div>';
     o += ws.length ? '<ul class="wall">' + ws.slice(0, 12).map(function (w) { return '<li><span>' + esc(w.data.label) + '</span><small>' + esc(niceDate(w.at)) + '</small></li>'; }).join('') + '</ul>' : ''; }
   return '<div class="page sec-page" style="--a:' + accent(k) + '"><div class="bar"><button class="link" data-do="closeO">\u2190 ' + esc(me ? 'Me' : k) + '</button></div>' +
     '<header class="shead">' + avatar(k, 'sm') + '<h1>' + esc(title) + '</h1></header>' + (q ? '<p class="quiet">Shabbat \u00b7 just for reading</p>' : '') + o + '</div>';
 }
 on('addNeed', function (t) { entry('need', { kid: portal(), text: t }); render(); });
-on('needx', function () { var v = $app.querySelector('#needx').value.trim(); if (v) { entry('need', { kid: portal(), text: v }); toast('Kept.'); render(); } });
+on('needx', function () { var v = $app.querySelector('#needx').value.trim(); if (v) { entry('need', { kid: portal(), text: v }); toast('Kept'); render(); } });
 on('rmNeed', function (id) { delEntry(id); render(); });
-on('saveMomentK', function () { var t = $app.querySelector('#mtext').value.trim(), tg = $app.querySelector('.chip.tag.on'); if (!t && !tg) { toast('A few words or a tag'); return; } entry('moment', { kid: portal(), text: t, tag: tg ? tg.dataset.arg : '' }); toast('Saved. That mattered.'); render(); });
+on('saveMomentK', function () { var t = $app.querySelector('#mtext').value.trim(), tg = $app.querySelector('.chip.tag.on'); if (!t && !tg) { toast('A few words or a tag'); return; } entry('moment', { kid: portal(), text: t, tag: tg ? tg.dataset.arg : '' }); toast('Saved'); render(); });
 on('jfor', function (kind) { var k = portal(), ex = jToday(kind); jdraft = ex ? Object.assign({}, ex.data, { eid: ex.id }) : { kind: kind }; var a = (jdraft.about || []).slice(); if (a.indexOf(k) < 0) a.push(k); jdraft.about = a; jdraft.backTo = k; open(function () { return vJournal(kind); }); });
 var SELF = ['You are allowed to be a work in progress and a good father at the same time.', 'Tired is not the same as failing.', 'You would never hold a friend to the standard you hold yourself to.', 'Coming back after a hard moment is the skill. You keep doing it.', 'Rest is not something you have to earn.'];
 var TONES = [['gentle', 'Gently'], ['okay', 'Getting by'], ['hard', 'Hard on myself']];
 on('tone', function (t) { var l = entries('selfcheck')[0]; entry('selfcheck', { tone: t }, l && day(l.at) === today() ? l.id : uid()); toast(t === 'hard' ? 'Noticed. Go easy tonight.' : 'Noted.'); render(); });
 on('checkTalk', function () { var t = $app.querySelector('#talk').value.trim(); if (!t) return; var m = t.match(HARSH);
-  if (!m) { entry('reframe', { text: t }); toast('Kept. That sounds kind.'); render(); return; }
+  if (!m) { entry('reframe', { text: t }); toast('Kept'); render(); return; }
   open(function () { return '<div class="page"><div class="bar"><button class="link" data-do="secBack" data-arg="talk">\u2190 Self-talk</button></div><h1>You wrote \u201c' + esc(m[0]) + '.\u201d</h1><p class="quote">' + nl(t) + '</p><p class="q">Would you say that to someone you love?</p>' +
     '<div class="script"><p class="serif">' + esc(kinderRewrite()) + '</p></div><textarea id="kind" rows="4" placeholder="Or in your own words"></textarea><button class="btn primary" data-do="keepTalk">Keep the kinder version</button></div>'; }); });
-on('keepTalk', function () { var t = $app.querySelector('#kind').value.trim(); entry('reframe', { text: t || kinderRewrite() }); toast('Kept.'); var k = portal(); open(function () { return vSec(k, 'talk'); }); });
+on('keepTalk', function () { var t = $app.querySelector('#kind').value.trim(); entry('reframe', { text: t || kinderRewrite() }); toast('Kept'); var k = portal(); open(function () { return vSec(k, 'talk'); }); });
 on('secBack', function (s) { var k = portal(); open(function () { return vSec(k, s); }); });
 
 /* ---------- home ---------- */
@@ -424,11 +406,6 @@ function vMemories() {
     (f === 'all' ? memoriesCard(null, isShabbat(NOW())) : memoriesCard(f, isShabbat(NOW())));
 }
 on('memf', function (k) { ui.memf = k; jset('steady.ui', ui); render(); });
-function vLetters() {
-  return '<h1>Letters</h1><div class="people">' + kids().map(function (k) { var lt = entries('letter').filter(function (l) { return l.data.kid === k; });
-    return '<button class="person" style="--a:' + accent(k) + '" data-do="letterFor" data-arg="' + esc(k) + '">' + avatar(k, 'lg') + '<span class="pt"><b>' + esc(k) + '</b><small>' + (lt.length ? lt.length + ' kept \u00b7 ' + esc(niceDate(lt[0].at)) : loves(k).length + ' things noted') + '</small></span><span class="chev">\u203A</span></button>'; }).join('') + '</div>';
-}
-on('letterFor', function (k) { ui.portal = k; jset('steady.ui', ui); open(function () { return vSec(k, 'letter'); }); });
 
 /* ---------- archive: every entry, one shape ---------- */
 function af() { var f = ui.af || {}; return { who: f.who || [], types: f.types || [], q: f.q || '' }; }
@@ -459,7 +436,7 @@ function memories(k) { return entries('memory').filter(function (m) { return k =
 function memoriesCard(k, q) {
   var ms = memories(k), o = '<div class="mem-card">';
   if (!q) o += '<button class="btn primary" data-do="addMem">+ Add a photo or video</button>';
-  var waiting = ms.filter(function (m) { return !m.data.fileId; }).length;
+  var waiting = ms.filter(function (m) { return m.data.mime && !m.data.fileId; }).length;
   if (waiting) o += '<p class="quiet">' + waiting + ' safe on this phone \u00b7 ' + (sync.state === 'ok' ? 'uploading\u2026' : 'will move to your private Drive once setup is done') + '</p>';
   if (!ms.length) return o + '<p class="empty">No memories yet.</p></div>';
   var cur = '';
@@ -513,7 +490,7 @@ on('saveMem', function () {
     if (f) { d.thumb = f.thumb; d.mime = f.mime; d.local = true; }
     entry('memory', d, eid);
     return f ? idbDo('readwrite', function (s) { return s.put({ id: uid(), eid: eid, blob: f.blob, mime: f.mime, name: f.name, who: mem.kid, date: mem.date }); }) : null; }))
-    .then(function () { toast('Kept. What a day.'); var f = mem.from; mem = null; overlay = f; render(); window.scrollTo(0, 0); mediaFlush(); })
+    .then(function () { toast('Kept'); var f = mem.from; mem = null; overlay = f; render(); window.scrollTo(0, 0); mediaFlush(); })
     .catch(function () { toast('Couldn\u2019t keep the file on this phone. The note is saved.'); close(); });
 });
 function b64(blob) { return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(String(r.result).split(',')[1]); }; r.onerror = rej; r.readAsDataURL(blob); }); }
@@ -554,7 +531,7 @@ on('rmMem', function (id) { if (!confirm('Remove this memory from the timeline? 
 on('ask', function () { open(vAsk); });
 function vAsk() {
   var ks = V.katya.slice().sort(function (a, b) { return a.at < b.at ? 1 : -1; });
-  return '<div class="page">' + back() + '<h1>Ask Katya</h1><p>Describe what happened or what you\u2019re worried about. Katya will read it and write back here with some support and ideas. It stays private.</p>' +
+  return '<div class="page">' + back() + '<h1>Ask Katya</h1><p>Write what happened or what worries you. Katya writes back here.</p>' + (sync.state === 'ok' ? '' : '<p class="quiet">Not connected yet. What you write stays on this phone until it is.</p>') +
     '<textarea id="askt" rows="6" placeholder="Tonight she shut her door after dinner and I wasn\u2019t sure whether to knock\u2026"></textarea><button class="btn primary" data-do="sendAsk">Send to Katya</button>' +
     ks.map(function (k) { return '<div class="thread"><p class="small">' + esc(niceDate(k.at)) + '</p><p class="me">' + nl(k.text) + '</p>' + (k.reply ? '<p class="kat"><b>Katya</b><br>' + nl(k.reply) + '</p>' : '<p class="small">' + (k.status === 'waiting to send' ? 'Saved on this phone. Not sent yet.' : 'Sent. Katya will reply here.') + '</p>') + '</div>'; }).join('') + '</div>';
 }
@@ -566,31 +543,25 @@ window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault()
 on('install', function () { if (deferred) { deferred.prompt(); deferred = null; } });
 on('noInstall', function () { ui.noInstall = true; jset('steady.ui', ui); render(); });
 /* ================= v6: organized by date ================= */
-var AREAS = [['home', 'Today'], ['archive', 'Timeline'], ['people', 'People'], ['support', 'Support']];
-var PARENT = { home: 'home', today: 'home', archive: 'archive', people: 'people', person: 'people', memories: 'people', letters: 'people', support: 'support', moment: 'support', care: 'support', reflect: 'support' };
-var TITLES = { archive: 'Timeline', people: 'People', support: 'Support', moment: 'Right now', care: 'Care', reflect: 'Reflect', memories: 'Memories', letters: 'Letters' };
-function area() { return PARENT[route.tab] || 'home'; }
-function nav() { var a = area(); return '<nav class="nav" aria-label="Main">' + AREAS.map(function (x) { return '<button class="' + (x[0] === a ? 'on' : '') + '" data-tab="' + x[0] + '"' + (x[0] === a ? ' aria-current="page"' : '') + '>' + x[1] + '</button>'; }).join('') + '</nav>'; }
 function topBar() {
-  var t = route.tab, a = area();
-  if (t === 'home' || t === 'today') return '<div class="bar brand"><span class="mark" aria-hidden="true"></span><span>Steady</span></div>';
-  if (t === a) return '<div class="bar"></div>';
-  return '<div class="bar"><button class="link back" data-tab="' + a + '">\u2190 ' + esc(TITLES[a] || 'Back') + '</button></div>';
+  if (route.tab === 'home') return '<div class="bar brand"><span class="mark" aria-hidden="true"></span><span>Steady</span></div>';
+  return '<div class="bar"><button class="link back" data-tab="home">\u2190 Home</button></div>';
 }
 function render() {
   V = view();
   if (!K) { $app.innerHTML = '<div class="locked"><span class="mark big" aria-hidden="true"></span><h1>Steady</h1><p>This is a private app. Open it from your personal link.</p></div>'; return; }
   var bare = overlay === vWelcome || overlay === vAllDone;
-  if (overlay) { $app.innerHTML = '<div class="shell">' + overlay() + '</div>' + (bare ? '' : nav()); bindAll(); return; }
-  var body = ({ home: vHome, today: vHome, moment: vMoment, moments: vMoments, care: vCare, reflect: vReflect, people: vPeople, person: vPortal, memories: vMemories, letters: vLetters, archive: vArchive, support: vSupport })[route.tab]();
-  $app.innerHTML = '<main class="page shell">' + topBar() + '<div class="fade">' + body + '</div><p class="sync">' + esc(syncLine()) + '</p></main>' + nav();
+  if (overlay) { $app.innerHTML = '<div class="shell' + (bare ? ' bare' : '') + '">' + overlay() + '</div>'; bindAll(); return; }
+  var body = ({ home: vHome, moment: vMoment, care: vCare, reflect: vReflect, person: vPortal, memories: vMemories, archive: vArchive })[route.tab] || vHome; body = body();
+  $app.innerHTML = '<main class="page shell">' + topBar() + '<div class="fade">' + body + '</div><p class="sync">' + esc(syncLine()) + '</p></main>';
   bindAll();
 }
 function back() { return '<div class="bar"><button class="link back" data-do="closeO">\u2190 Back</button></div>'; }
 
 /* neutral identity: names in words, no colour coding */
-function accent() { return 'var(--ink2)'; }
-function avatar(k, cls) { var ph = photoOf(k); return '<span class="av ' + (cls || '') + '"' + (ph ? ' style="background-image:url(' + esc(ph) + ')"' : '') + ' aria-hidden="true">' + (ph ? '' : esc(k === 'Me' ? 'Me' : k.charAt(0))) + '</span>'; }
+var PCOL = ['#C9774F', '#4F7A9A', '#94689B', '#B08A3E', '#4E8C86'];
+function accent(k) { if (k === 'Me') return '#6F8A78'; var i = kids().indexOf(k); return i < 0 ? 'var(--soft)' : PCOL[i % PCOL.length]; }
+function avatar(k, cls) { var ph = photoOf(k); return '<span class="av ' + (cls || '') + '" style="--pc:' + accent(k) + (ph ? ';background-image:url(' + esc(ph) + ')' : '') + '" aria-hidden="true">' + (ph ? '' : esc(k === 'Me' ? 'Me' : k.charAt(0))) + '</span>'; }
 function bubbles(cur) { return '<div class="seg wide" role="tablist" aria-label="Person">' + kids().concat(['Me']).map(function (k) { return '<button class="' + (k === cur ? 'on' : '') + '" data-do="portal" data-arg="' + esc(k) + '">' + esc(k) + '</button>'; }).join('') + '</div>'; }
 on('portal', function (k) { ui.portal = k; jset('steady.ui', ui); route = { tab: 'person' }; overlay = null; render(); window.scrollTo(0, 0); });
 function whoText(who) { return who.join(', '); }
@@ -670,7 +641,7 @@ function feed(its) {
 on('jumpTo', function (b) { var el = document.getElementById('b-' + b); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 70, behavior: 'smooth' }); });
 function vArchive() {
   var v = ui.aview || 'feed', its = filtered(), f = af();
-  var o = '<header class="ph"><h1>Timeline</h1><p class="lead">Everything you keep, by date.</p></header>';
+  var o = '<header class="ph"><h1>Timeline</h1></header>';
   o += '<div class="seg" role="tablist"><button class="' + (v === 'feed' ? 'on' : '') + '" data-do="aview" data-arg="feed">List by date</button><button class="' + (v === 'cal' ? 'on' : '') + '" data-do="aview" data-arg="cal">Calendar</button></div>';
   o += '<div class="jumpd"><label class="lbl" for="ajump">Jump to a date</label><div class="inline"><input id="ajump" type="date" max="' + today() + '" value="' + esc(ui.ajump || '') + '"><button class="btn small" data-do="jumpDate">Open day</button></div></div>';
   o += '<details class="fwrap"' + (hasFilter(f) || ui.fopen ? ' open' : '') + '><summary>Filter and search' + (hasFilter(f) ? '<em>On</em>' : '') + '</summary>' + filterBar() + '</details>';
@@ -685,8 +656,8 @@ function calendar(its) {
     '<div class="cal">' + ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(function (d) { return '<span class="dow">' + d + '</span>'; }).join('');
   for (var i = 0; i < first.getDay(); i++) o += '<span></span>';
   for (var dd = 1; dd <= nd; dd++) { var s = m + '-' + pad(dd), x = by[s] || [];
-    o += '<button class="cd' + (s === today() ? ' today' : '') + (x.length ? ' has' : '') + '" data-do="openDay" data-arg="' + s + '"' + (s > today() ? ' disabled' : '') + ' aria-label="' + esc(longDay(s)) + ', ' + plural(x.length, 'entry', 'entries') + '"><span>' + dd + '</span>' + (x.length ? '<small>' + x.length + '</small>' : '') + '</button>'; }
-  o += '</div><p class="when center">Small number = entries that day \u00b7 Tap any day to open it</p>';
+    o += '<button class="cd' + (s === today() ? ' today' : '') + (x.length ? ' has' : '') + '" data-do="openDay" data-arg="' + s + '"' + (s > today() ? ' disabled' : '') + ' aria-label="' + esc(longDay(s)) + ', ' + plural(x.length, 'entry', 'entries') + '"><span>' + dd + '</span>' + (x.length ? dots(uniqWho(x)) : '') + '</button>'; }
+  o += '</div><p class="legend">' + kids().concat(['Me']).map(function (k) { return '<span><i style="background:' + accent(k) + '"></i>' + esc(k) + '</span>'; }).join('') + '</p>';
   var mc = its.filter(function (i) { return i.day.slice(0, 7) === m; });
   o += '<p class="count">' + plural(mc.length, 'entry', 'entries') + ' in ' + esc(first.toLocaleDateString(undefined, { month: 'long' })) + '</p>' + (mc.length ? grouped(mc) : '');
   return o;
@@ -698,7 +669,7 @@ function vDay(s) {
   var prev = new Date(d), next = new Date(d); prev.setDate(d.getDate() - 1); next.setDate(d.getDate() + 1);
   var o = '<div class="page"><div class="bar"><button class="link back" data-do="closeO">\u2190 Back</button></div>' +
     '<header class="ph"><p class="date">' + esc(d.toLocaleDateString(undefined, { weekday: 'long' }) + ' \u00b7 ' + d.getFullYear()) + (niceDate(s) === 'Today' || niceDate(s) === 'Yesterday' ? ' \u00b7 ' + niceDate(s) : '') + '</p><h1>' + esc(d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })) + '</h1>' +
-    '<p class="lead">' + (its.length ? plural(its.length, 'entry', 'entries') + ' \u00b7 ' + esc(whoText(uniqWho(its))) : 'Nothing written this day. It still counted.') + '</p></header>' +
+    '<p class="lead">' + (its.length ? plural(its.length, 'entry', 'entries') + ' \u00b7 ' + esc(whoText(uniqWho(its))) : 'Nothing written this day.') + '</p></header>' +
     '<div class="daynav"><button class="btn small ghost" data-do="openDay" data-arg="' + ymd(prev) + '">\u2039 Previous day</button><button class="btn small ghost" data-do="openDay" data-arg="' + ymd(next) + '"' + (ymd(next) > today() ? ' disabled' : '') + '>Next day \u203A</button></div>';
   if (s === today() && !isShabbat(NOW())) o += '<button class="btn" data-do="journal" data-arg="' + (NOW().getHours() < 15 ? 'am' : 'pm') + '">Write in today\u2019s journal</button>';
   uniqWho(its).forEach(function (w) { var mine = its.filter(function (i) { return uniqWho([i])[0] === w; });
@@ -715,47 +686,35 @@ function vHome() {
   var d = NOW(), q = isShabbat(d), ai = allItems(), td = ai.filter(function (i) { return i.day === today(); }), o = '';
   o += '<header class="ph hello"><p class="date">' + esc(d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })) + '</p><h1>' + greeting() + '.</h1></header>';
   o += journalCard(d) || (q ? '' : '<button class="card prompt-card" data-do="journal" data-arg="' + (d.getHours() < 15 ? 'am' : 'pm') + '"><p class="eyebrow">' + (d.getHours() < 15 ? 'Morning journal' : 'Evening journal') + '</p><p class="serif">' + (jToday('am') || jToday('pm') ? 'Add to today\u2019s journal' : 'A minute for your journal') + '</p><span class="go">Write \u203A</span></button>');
-  if (!q) o += '<div class="quick3"><button class="btn" data-tab="moment">I need a moment</button><button class="btn" data-do="addMemHome">Add a memory</button><button class="btn" data-do="ask">Ask Katya</button></div>';
-  o += '<section class="block"><h2 class="bh"><span>Today so far</span><em>' + plural(td.length, 'entry', 'entries') + '</em></h2>' + (td.length ? td.slice(0, 6).map(function (i) { return card(i); }).join('') + (td.length > 6 ? '<button class="link more" data-do="openDay" data-arg="' + today() + '">See all of today \u203A</button>' : '') : '<p class="empty">Nothing yet today. Anything you write, notice or keep shows up here.</p>') + '</section>';
-  var otd = onThisDay(); if (otd) o += '<section class="block"><h2 class="bh"><span>' + otd.label + '</span><em>' + esc(niceDate(otd.it.day)) + '</em></h2>' + card(otd.it, true) + '</section>';
-  o += '<section class="block"><h2 class="bh"><span>People</span><button class="link" data-tab="people">All people \u203A</button></h2><div class="people">' + kids().concat(['Me']).map(personRow).join('') + '</div></section>';
-  var rec = ai.filter(function (i) { return i.day !== today() && daysAgo(i.day) < 7; });
-  o += '<section class="block"><h2 class="bh"><span>This past week</span><button class="link" data-tab="archive">Full timeline \u203A</button></h2>' + (rec.length ? grouped(rec, 8, true) : '<p class="empty">Nothing from the past week yet.</p>') + '</section>';
+  o += '<div class="ptiles">' + kids().concat(['Me']).map(personTile).join('') + '</div>';
+  var n = doneCount(), wait = V.katya.filter(function (k) { return k.status === 'waiting to send'; }).length, rep = V.katya.filter(function (k) { return k.reply; }).length;
+  o += '<div class="tools">' +
+    tool('tab', 'archive', 'Timeline', plural(ai.length, 'entry', 'entries')) +
+    tool('tab', 'memories', 'Memories', plural(entries('memory').length, 'kept', 'kept')) +
+    tool('tab', 'moment', 'Right now', 'A hard moment') +
+    tool('tab', 'reflect', 'Reflect', n + ' of ' + P.length) +
+    tool('tab', 'care', 'Care', 'For you') +
+    (q ? '' : tool('do', 'ask', 'Ask Katya', wait ? wait + ' not sent yet' : rep ? plural(rep, 'reply', 'replies') : 'Write it out')) + '</div>';
   var th = (V.config.therapy || '').toLowerCase(), wd = d.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
   if (th && th.indexOf(wd) === 0) o += '<div class="card soft"><p class="eyebrow">Tonight</p><p>' + esc(child()) + '\u2019s session is tonight. Be nearby and easy.</p></div>';
+  if (td.length) o += '<section class="block"><h2 class="bh"><span>Today so far</span><button class="link" data-do="openDay" data-arg="' + today() + '">' + plural(td.length, 'entry', 'entries') + ' \u203A</button></h2>' + td.slice(0, 3).map(function (i) { return card(i); }).join('') + '</section>';
+  var otd = onThisDay(); if (otd) o += '<section class="block"><h2 class="bh"><span>' + otd.label + '</span><em>' + esc(niceDate(otd.it.day)) + '</em></h2>' + card(otd.it, true) + '</section>';
   var cr = credits(); if (cr.length) { var c = pick(cr, today() + 'c'); o += '<div class="card credit"><p class="eyebrow">Remember</p><p class="serif">' + esc(c.t) + '</p><p class="small">' + esc(c.src) + '</p></div>'; }
   if (!standalone() && !ui.noInstall) o += '<div class="card soft"><p class="eyebrow">Keep it on your home screen</p><p class="small">' + (/iphone|ipad/i.test(navigator.userAgent) ? 'Safari \u2192 Share \u2192 Add to Home Screen' : 'Browser menu \u2192 Add to Home screen') + '</p><div class="row2">' + (deferred ? '<button class="btn small" data-do="install">Install</button>' : '') + '<button class="btn small ghost" data-do="noInstall">Not now</button></div></div>';
   return o;
 }
-on('addMemHome', function () { mem = { from: null, kid: child(), date: today(), proud: 'of', files: [] }; open(vMem); });
-function personRow(k) {
+function tool(kind, target, label, sub) { return '<button class="tool" ' + (kind === 'tab' ? 'data-tab' : 'data-do') + '="' + target + '"><b>' + esc(label) + '</b><small>' + esc(sub) + '</small></button>'; }
+function personTile(k) {
   var me = k === 'Me', a = ages()[k], its = allItems().filter(function (i) { return i.who.indexOf(k) >= 0; }), last = its[0];
-  var line = me ? cut(pick(SELF, today() + 's'), 64) : last ? 'Last: ' + niceDate(last.day) + ' \u00b7 ' + cut(last.text || last.title, 40) : 'Nothing kept yet';
-  return '<button class="person" data-do="portal" data-arg="' + esc(k) + '">' + avatar(k, 'lg') + '<span class="pt"><b>' + esc(k) + (a ? '<em>' + plural(a, 'year') + '</em>' : '') + '</b><small>' + esc(line) + '</small></span><span class="chev" aria-hidden="true">\u203A</span></button>';
+  var line = last ? (last.day === today() ? 'Today' : niceDate(last.day)) : 'Nothing yet';
+  return '<button class="ptile" style="--pc:' + accent(k) + '" data-do="portal" data-arg="' + esc(k) + '">' + avatar(k, 'lg') + '<b>' + esc(k) + '</b><small>' + (a ? esc(plural(a, 'year')) + ' \u00b7 ' : '') + esc(line) + '</small></button>';
 }
-function vPeople() {
-  return '<header class="ph"><h1>People</h1><p class="lead">A page for each of them, and one for you.</p></header><div class="people">' + kids().concat(['Me']).map(personRow).join('') + '</div>' +
-    '<h2 class="bh"><span>Across everyone</span></h2><div class="stack">' +
-    row('memories', 'Memories', plural(entries('memory').length, 'photo or note', 'photos and notes'), 'tab') +
-    row('letters', 'Letters', plural(entries('letter').length, 'letter') + ' kept', 'tab') + '</div>';
-}
-function row(target, title, sub, kind) { return '<button class="rn" ' + (kind === 'tab' ? 'data-tab' : 'data-do') + '="' + target + '"><span><b>' + esc(title) + '</b><small>' + esc(sub) + '</small></span><span class="chev" aria-hidden="true">\u203A</span></button>'; }
-function vSupport() {
-  var n = doneCount(), plan = entries('plan')[0];
-  return '<header class="ph"><h1>Support</h1><p class="lead">For hard moments, and for you.</p></header><div class="stack">' +
-    row('moment', 'Right now', 'A hard moment, step by step', 'tab') +
-    row('ask', 'Ask Katya', V.katya.length ? plural(V.katya.length, 'conversation') : 'Write it out, get a thoughtful reply', 'do') + '</div>' +
-    '<h2 class="bh"><span>Looking after yourself</span></h2><div class="stack">' +
-    row('care', 'Care', plan && plan.data.items.length ? plural(plan.data.items.length, 'thing') + ' in your plan' : 'Self-care plan, kinder voice', 'tab') +
-    row('reflect', 'Reflect', n + ' of ' + P.length + ' questions answered', 'tab') + '</div>';
-}
-
 /* person page */
 var SECS = { notice: ['', 'Noticed'], needs: ['', 'Needs'], mem: ['', 'Memories'], moments: ['', 'Moments'], journal: ['', 'Journal'], letter: ['', 'Letter'], kind: ['', 'Kindness'], talk: ['', 'Self-talk'], wins: ['', 'Wins'] };
 function tile(k, s, count, preview, extra) { return '<button class="tile" data-do="sec" data-arg="' + s + '"><b>' + SECS[s][1] + '<em>' + (count ? count : '') + '</em></b>' + (extra || '') + '<small>' + esc(cut(preview, 52)) + '</small></button>'; }
 function vPortal() {
   var k = portal(), a = ages()[k], me = k === 'Me', q = isShabbat(NOW()), o = bubbles(k);
-  o += '<header class="phead">' + avatar(k, 'xl') + '<div><h1>' + (me ? 'You' : esc(k)) + '</h1><p class="lead">' + (me ? 'Looking after the one who looks after them' : a ? plural(a, 'year') + ' old' : '') + '</p></div></header>';
+  o += '<header class="phead">' + avatar(k, 'xl') + '<div><h1>' + (me ? 'You' : esc(k)) + '</h1>' + (!me && a ? '<p class="lead">' + plural(a, 'year') + ' old</p>' : '') + '</div></header>';
   if (q) o += '<p class="quiet">Shabbat \u00b7 just for reading</p>';
   var ms = memories(k), lm = ms[0];
   o += '<div class="tiles">';
@@ -769,20 +728,20 @@ function vPortal() {
       tile(k, 'needs', mn.length, mn[0] ? mn[0].data.text : 'Name one') + tile(k, 'mem', ms.length, lm ? lm.data.note || niceDate(lm.data.date) : 'Proud of myself', strip(k)) + tile(k, 'journal', mj.length, mj[0] ? niceDate(mj[0].at) : 'Your entries'); }
   o += '</div>';
   var its = allItems().filter(function (i) { return i.who.indexOf(k) >= 0; });
-  o += '<section class="block"><h2 class="bh"><span>' + (me ? 'Your timeline' : esc(k) + '\u2019s timeline') + '</span><em>' + plural(its.length, 'entry', 'entries') + '</em></h2>' + (its.length ? grouped(its, 8) + '<button class="btn" data-do="personTimeline" data-arg="' + esc(k) + '">See everything for ' + esc(me ? 'you' : k) + ' by date</button>' : '<p class="empty">Nothing kept yet.</p>') + '</section>';
+  o += '<button class="rowlink" data-do="personTimeline" data-arg="' + esc(k) + '"><span><b>' + (me ? 'Your timeline' : esc(k) + '\u2019s timeline') + '</b><small>' + plural(its.length, 'entry', 'entries') + ', by date</small></span><span class="chev" aria-hidden="true">\u203A</span></button>';
   return o;
 }
 on('personTimeline', function (k) { ui.af = { who: [k], types: [], q: '' }; ui.aview = 'feed'; jset('steady.ui', ui); go('archive'); });
 
 /* clean versions without symbol icons */
 function vMoment() {
-  return '<header class="ph"><h1>Right now</h1><p class="lead">One breath first. Then pick what fits.</p></header><div class="stack">' +
+  return '<header class="ph"><h1>Right now</h1></header><div class="stack">' +
     HELP.map(function (h) { return '<button class="rn" data-do="help" data-arg="' + h[0] + '"><span><b>' + esc(fill(h[1])) + '</b><small>' + esc(h[2]) + '</small></span><span class="chev" aria-hidden="true">\u203A</span></button>'; }).join('') + '</div>' +
     '<button class="btn ghost" data-do="ask">Ask Katya</button>';
 }
 function vCare() {
   var plan = entries('plan')[0], pi = plan ? plan.data.items : [], cr = credits();
-  return '<header class="ph"><h1>Care</h1><p class="lead">Caring for yourself is part of caring for them.</p></header><div class="tiles">' +
+  return '<header class="ph"><h1>Care</h1></header><div class="tiles">' +
     '<button class="tile" data-do="care" data-arg="plan"><b>Self-care plan<em>' + (pi.length || '') + '</em></b><small>' + esc(cut(pi[0] || 'A few small, real things', 52)) + '</small></button>' +
     '<button class="tile" data-do="care" data-arg="remember"><b>Remember<em>' + (cr.length || '') + '</em></b><small>' + esc(cut(cr[0] ? cr[0].t : 'What you give them', 52)) + '</small></button>' +
     '<button class="tile" data-do="care" data-arg="kinder"><b>Kinder voice</b><small>' + esc(cut(reframe(), 52)) + '</small></button>' +
@@ -802,17 +761,15 @@ function vCareSec(s) {
   return o + '</div>';
 }
 function vReflect() {
-  var n = doneCount(), o = '<header class="ph"><h1>Reflect</h1><p class="lead">' + n + ' of ' + P.length + ' answered</p></header><div class="prog" role="progressbar" aria-valuenow="' + n + '" aria-valuemax="' + P.length + '"><span style="width:' + Math.round(100 * n / P.length) + '%"></span></div>';
+  var n = doneCount(), sec = ui.rsec === 'child' ? 'child' : 'you', o = '<header class="ph"><h1>Reflect</h1><p class="lead">' + n + ' of ' + P.length + ' answered</p></header>';
   if (n < P.length) o += '<button class="btn primary" data-do="resume">' + (n ? 'Continue where I left off' : 'Begin') + '</button>';
-  o += '<button class="btn" data-do="reflTimeline">My answers by date</button>';
-  ['you', 'child'].forEach(function (s) {
-    o += '<h2 class="bh"><span>' + esc(fill(SEC[s])) + '</span></h2><div class="stack">';
-    P.forEach(function (p, i) { if (p.s !== s) return; var a = ans(i), t = latest(i);
-      o += '<button class="rq' + (t ? ' done' : '') + '" data-do="gotoQ" data-arg="' + i + '"><span><small class="st">' + (i + 1) + ' \u00b7 ' + (t ? 'Answered ' + esc(niceDate(a[a.length - 1].at)) : drafts[i] ? 'Draft' : 'Not yet') + '</small><b>' + esc(fill(p.t)) + '</b>' + (t ? '<small>' + esc(cut(t, 90)) + '</small>' : '') + '</span></button>'; });
-    o += '</div>';
-  });
+  o += '<div class="seg" role="tablist" aria-label="Section">' + ['you', 'child'].map(function (x) { return '<button role="tab" class="' + (x === sec ? 'on' : '') + '" aria-selected="' + (x === sec) + '" data-do="rsec" data-arg="' + x + '">' + esc(x === 'you' ? 'For you' : 'For ' + child()) + '</button>'; }).join('') + '</div><div class="stack">';
+  P.forEach(function (p, i) { if (p.s !== sec) return; var a = ans(i), t = latest(i);
+    o += '<button class="rq' + (t ? ' done' : '') + '" data-do="gotoQ" data-arg="' + i + '"><span><small class="st">' + (i + 1) + ' \u00b7 ' + (t ? 'Answered ' + esc(niceDate(a[a.length - 1].at)) : drafts[i] ? 'Draft' : 'Not yet') + '</small><b>' + esc(fill(p.t)) + '</b>' + (t ? '<small>' + esc(cut(t, 90)) + '</small>' : '') + '</span></button>'; });
+  o += '</div><button class="btn ghost" data-do="reflTimeline">My answers by date</button>';
   return o;
 }
+on('rsec', function (x) { ui.rsec = x; jset('steady.ui', ui); render(); });
 on('reflTimeline', function () { ui.af = { who: [], types: ['reflect'], q: '' }; ui.aview = 'feed'; jset('steady.ui', ui); go('archive'); });
 function journalCard(d) {
   if (isShabbat(d)) return '<div class="card prompt-card shab"><p class="eyebrow">Shabbat</p><p class="serif">Nothing to fill in. Just be with them.</p></div>';
