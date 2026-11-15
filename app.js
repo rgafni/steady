@@ -1,7 +1,9 @@
 (function () {
 'use strict';
 var P = window.STEADY_PROMPTS, SEC = window.STEADY_SECTIONS, $app = document.getElementById('app');
-var LS = localStorage, K = LS.getItem('steady.k'), API = LS.getItem('steady.api') || (window.STEADY_CONFIG || {}).API_URL || '';
+var LS = localStorage, NATIVE = !!window.SteadyNative, K = LS.getItem('steady.k'), API = LS.getItem('steady.api') || (window.STEADY_CONFIG || {}).API_URL || '';
+/* The Android app keeps everything on the phone: no key, no backend, no network. */
+if (NATIVE) { K = K || 'device'; API = ''; }
 function jget(k, d) { try { var v = JSON.parse(LS.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
 function jset(k, v) { try { LS.setItem(k, JSON.stringify(v)); return true; } catch (e) { setTimeout(function () { toast('Phone storage is full. This was not saved.'); }, 0); return false; } }
 var snap = jget('steady.snap', { config: {}, answers: [], entries: [], katya: [] }), queue = jget('steady.q', []), drafts = jget('steady.drafts', {}), ui = jget('steady.ui', { lastQ: 0 });
@@ -23,11 +25,10 @@ function pick(arr, seed) { if (!arr.length) return null; var s = 0, str = seed |
 
 /* ---------- data (server snapshot + pending ops) ---------- */
 function view() {
-  var v = { config: Object.assign({}, snap.config), answers: snap.answers.slice(), entries: snap.entries.slice(), katya: snap.katya.slice() };
+  var v = { config: Object.assign({}, snap.config), answers: (snap.answers || []).slice(), entries: (snap.entries || []).slice() };
   queue.forEach(function (op) {
     if (op.t === 'answer' && !v.answers.some(function (a) { return a.id === op.id; })) v.answers.push({ id: op.id, at: op.at, q: op.q, text: op.text });
     if (op.t === 'entry') { v.entries = v.entries.filter(function (e) { return e.id !== op.eid; }); if (!op.del) v.entries.push({ id: op.eid, at: op.at, type: op.type, data: op.data }); }
-    if (op.t === 'ask' && !v.katya.some(function (a) { return a.id === op.id; })) v.katya.push({ id: op.id, at: op.at, text: op.text, status: 'waiting to send', reply: '' });
   });
   return v;
 }
@@ -45,15 +46,17 @@ function items(q) {
 }
 function entries(type) { return V.entries.filter(function (e) { return e.type === type; }).sort(function (a, b) { return a.at < b.at ? 1 : -1; }); }
 function push(op) { op.id = op.id || uid(); op.at = op.at || nowStr(); queue.push(op); jset('steady.q', queue); V = view(); flush(); }
-function entry(type, data, eid) { push({ t: 'entry', type: type, data: data, eid: eid || uid() }); }
+function entry(type, data, eid, at) { push({ t: 'entry', type: type, data: data, eid: eid || uid(), at: at }); }
+/* Old Ask Katya items stay stored as they were (and in Save a copy), but are never shown or sent. */
+function pend() { return queue.filter(function (o) { return o.t !== 'ask'; }); }
 function delEntry(eid) { push({ t: 'entry', eid: eid, del: true, type: '', data: {} }); }
 function saveAnswer(q, text) { if (text.trim() === latest(q).trim()) return false; push({ t: 'answer', q: q, text: text }); delete drafts[q]; jset('steady.drafts', drafts); return true; }
 
 var flushing = false;
 function flush(force) {
   if (!API || !K || flushing) { if (!API) sync.state = 'local'; return; }
-  if (!queue.length && !force) return;
-  flushing = true; var ops = queue.slice(); sync.state = 'syncing';
+  var ops = pend(); if (!ops.length && !force) return;
+  flushing = true; sync.state = 'syncing';
   fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow', referrerPolicy: 'no-referrer', credentials: 'omit', cache: 'no-store', body: JSON.stringify({ k: K, ops: ops }) })
     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function (j) {
@@ -63,12 +66,12 @@ function flush(force) {
       sync.state = 'ok'; sync.at = nowStr(); setTimeout(mediaFlush, 0);
     })
     .catch(function (e) { sync.state = 'offline'; sync.msg = String(e.message || e); })
-    .then(function () { flushing = false; V = view(); var a = document.activeElement; if (!a || !/TEXTAREA|INPUT/.test(a.tagName)) render(); if (queue.length && sync.state === 'ok') flush(); });
+    .then(function () { flushing = false; V = view(); var a = document.activeElement; if (!a || !/TEXTAREA|INPUT/.test(a.tagName)) render(); if (pend().length && sync.state === 'ok') flush(); });
 }
 
 /* ---------- shell ---------- */
 function syncLine() {
-  var n = queue.length;
+  var n = pend().length;
   if (sync.state === 'local') return 'Saved on this phone only';
   if (sync.state === 'offline') return n ? 'Saved on this phone. Not synced yet.' : 'Saved. Not connected right now.';
   if (sync.state === 'syncing') return 'Saving privately\u2026';
@@ -185,7 +188,7 @@ function vHelp(k) {
       '<div class="card soft"><p><b>Is this mine to solve tonight?</b> If not, it can wait on the page. If yes, what is one small next step?</p></div>' + yours(7, 'What you gave yourself permission to do');
     var pk = entries('parked').slice(0, 3); if (pk.length) o += '<p class="eyebrow">Recently set down</p>' + pk.map(function (p) { return '<p class="small">' + esc(niceDate(p.at)) + ': ' + esc(p.data.text) + '</p>'; }).join('');
   }
-  return '<div class="page">' + o + (isShabbat(NOW()) ? '' : '<button class="btn ghost" data-do="ask">Ask Katya about this</button>') + '</div>';
+  return '<div class="page">' + o + '</div>';
 }
 function reframe() {
   var r = entries('reframe').filter(function (x) { return String(x.data.text || '').trim(); })[0]; if (r) return r.data.text;
@@ -240,14 +243,14 @@ function vJournal(kind) {
   var o = back();
   if (kind === 'am') {
     var idea = jdraft.kid ? pick(jdraft.kid === child() ? oneOnOneIdeas() : ['A few minutes of their favorite thing, together', 'Ask about something they care about, then just listen', 'A silly moment at breakfast'], today() + jdraft.kid) : '';
-    o += '<p class="eyebrow">Good morning</p><h1>Just a minute</h1>' +
+    o += '<p class="eyebrow">' + (jOld() ? esc(longDay(day(jdraft.at))) : 'Good morning') + '</p><h1>' + (jOld() ? 'Morning journal' : 'Just a minute') + '</h1>' +
       jf('intention', 'Who do I want to be with the kids today?', 'One word or one line is enough. Calm, present, playful\u2026') +
       '<label class="lbl">One child to give a small moment to <span class="opt">optional</span></label>' + kidChips('kid', jdraft.kid) +
       (idea ? '<p class="hint">Maybe: \u201c' + esc(idea) + '\u201d</p>' : '') +
       jf('grateful', 'One thing I\u2019m grateful for', 'Big or tiny.') + aboutChips();
   } else {
     var gv = items(1), ci = careItems();
-    o += '<p class="eyebrow">This evening</p><h1>What went right today</h1><p class="small">Any of these can stay blank.</p>' +
+    o += '<p class="eyebrow">' + (jOld() ? esc(longDay(day(jdraft.at))) : 'This evening') + '</p><h1>' + (jOld() ? 'What went right that day' : 'What went right today') + '</h1><p class="small">Any of these can stay blank.</p>' +
       jf('proud', 'Something I\u2019m proud of as a dad today', '') +
       jf('moment', 'One small moment of connection', 'A look, a joke, a ride. Small counts.') + kidChips('momentKid', jdraft.momentKid) +
       jf('gave', 'Something I gave them that I\u2019d usually overlook', gv.length ? 'Like you wrote: \u201c' + esc(pick(gv, today() + 'g')) + '\u201d' : 'Patience, a hug, being home for dinner\u2026') +
@@ -256,6 +259,7 @@ function vJournal(kind) {
   }
   return '<div class="page">' + o + '<button class="btn primary" data-do="saveJournal" data-arg="' + kind + '">Save</button></div>';
 }
+function jOld() { return jdraft.at && day(jdraft.at) !== today(); }
 function readJ(kind) { ['intention', 'grateful', 'proud', 'moment', 'gave', 'care', 'love'].forEach(function (f) { var e = $app.querySelector('#j_' + f); if (e) jdraft[f] = e.value.trim(); }); }
 function aboutChips() { var a = jdraft.about || []; return '<label class="lbl">This entry is about <span class="opt">optional \u00b7 shows on their page</span></label><div class="chips">' + kids().concat(['Me']).map(function (k) { return '<button class="chip' + (a.indexOf(k) >= 0 ? ' on' : '') + '" data-do="jabout" data-arg="' + esc(k) + '">' + esc(k) + '</button>'; }).join('') + '</div>'; }
 on('jabout', function (k) { var kind = jdraft.kind; readJ(); var a = (jdraft.about || []).slice(), i = a.indexOf(k); if (i >= 0) a.splice(i, 1); else a.push(k); jdraft.about = a; open(function () { return vJournal(kind); }); });
@@ -279,11 +283,14 @@ on('backJ', function () { var k = jdraft.kind; open(function () { return vJourna
 on('keepKind', function () { var t = $app.querySelector('#kind').value.trim(); jdraft.kinder = t || kinderRewrite(); if (t) entry('reframe', { text: t }); commitJournal(); });
 on('skipKind', function () { commitJournal(); });
 function commitJournal() {
-  var back_ = jdraft.backTo; delete jdraft.backTo;
+  var back_ = jdraft.backTo, from = jdraft.from, at = jdraft.at; delete jdraft.backTo; delete jdraft.from; delete jdraft.at;
   var d = Object.assign({}, jdraft), eid = d.eid || uid(); delete d.eid; delete d.kindChecked;
-  entry('journal', d, eid);
-  if (d.kind === 'pm' && d.moment) { var me = 'jm_' + eid; entry('moment', { kid: d.momentKid || child(), text: d.moment, tag: 'From journal' }, me); }
-  if (d.kind === 'pm' && d.love) entry('love', { kid: d.loveKid || child(), text: d.love, src: 'journal' }, 'jl_' + eid);
+  if (from) d.edited = nowStr();
+  entry('journal', d, eid, at);
+  var had = function (id) { return V.entries.some(function (e) { return e.id === id; }); };
+  if (d.kind === 'pm' && d.moment) { var me = 'jm_' + eid; entry('moment', { kid: d.momentKid || child(), text: d.moment, tag: 'From journal' }, me, at); } else if (had('jm_' + eid)) delEntry('jm_' + eid);
+  if (d.kind === 'pm' && d.love) entry('love', { kid: d.loveKid || child(), text: d.love, src: 'journal' }, 'jl_' + eid, at); else if (had('jl_' + eid)) delEntry('jl_' + eid);
+  if (from) { toast('Saved'); overlay = from.o; render(); return; }
   toast(d.kind === 'am' ? 'Have a good day.' : 'Saved. Rest well.'); if (back_) { route = { tab: 'person' }; ui.portal = back_; jset('steady.ui', ui); open(function () { return vSec(back_, 'journal'); }); } else go('home');
 }
 function journalHistory() {
@@ -316,7 +323,7 @@ var OCC = { 'Birthday': ['Happy birthday. Another year of watching you grow, and
   'Just because': ['No reason for this letter except that I love you and wanted you to know it in writing.', 'I\u2019m lucky to be your father.'] };
 var letter = null;
 on('compose', function () { var k = lkid || child(); letter = { kid: k, occasion: 'Just because' }; letter.text = buildLetter(k, letter.occasion); open(vLetter); });
-on('openLetter', function (id) { var l = entries('letter').filter(function (x) { return x.id === id; })[0]; if (!l) return; letter = Object.assign({ eid: l.id }, l.data); open(vLetter); });
+on('openLetter', function (id) { var l = entries('letter').filter(function (x) { return x.id === id; })[0]; if (!l) return; letter = Object.assign({ eid: l.id, at: l.at }, l.data); open(vLetter); });
 function buildLetter(k, occ) {
   var ls = uniqText(loves(k).slice().reverse().map(function (l) { return l.data.text.replace(/\.$/, ''); }));
   var ms = uniqText(entries('moment').filter(function (m) { return m.data.kid === k && m.data.text; }).map(function (m) { return m.data.text.replace(/\.$/, ''); })).slice(0, 4).reverse();
@@ -334,8 +341,8 @@ function vLetter() {
     '<button class="btn primary" data-do="saveLetter">Keep this letter</button><button class="btn ghost" data-do="copyLetter">Copy text</button></div>';
 }
 on('occ', function (x) { var cur = $app.querySelector('#ltext').value; if (cur === letter.text || confirm('Start over with the ' + x + ' opening? Your edits will be replaced.')) { letter.occasion = x; letter.text = buildLetter(letter.kid, x); open(vLetter); } });
-on('saveLetter', function () { var t = $app.querySelector('#ltext').value; letter.text = t; entry('letter', { kid: letter.kid, occasion: letter.occasion, text: t }, letter.eid || (letter.eid = uid())); toast('Letter kept privately'); });
-on('copyLetter', function () { var t = $app.querySelector('#ltext').value; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast('Copied'); }, function () { toast('Select the text and copy it'); }); });
+on('saveLetter', function () { var t = $app.querySelector('#ltext').value; letter.text = t; entry('letter', { kid: letter.kid, occasion: letter.occasion, text: t }, letter.eid || (letter.eid = uid()), letter.at); toast('Letter kept privately'); });
+on('copyLetter', function () { var t = $app.querySelector('#ltext').value; if (NATIVE && window.SteadyNative.copyText) { window.SteadyNative.copyText(t); toast('Copied'); return; } (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast('Copied'); }, function () { toast('Select the text and copy it'); }); });
 
 /* ---------- portals: one per child, and one for you ---------- */
 function ages() { var m = {}; String(V.config.ages || LS.getItem('steady.ages') || '').split(',').forEach(function (p) { var x = p.split(':'); if (x[1]) m[x[0].trim()] = parseInt(x[1], 10); }); return m; }
@@ -440,7 +447,7 @@ function memoriesCard(k, q) {
   var ms = memories(k), o = '<div class="mem-card">';
   if (!q) o += '<button class="btn primary" data-do="addMem">+ Add a photo or video</button>';
   var waiting = ms.filter(function (m) { return m.data.mime && !m.data.fileId; }).length;
-  if (waiting) o += '<p class="quiet">' + waiting + ' safe on this phone \u00b7 ' + (sync.state === 'ok' ? 'uploading\u2026' : 'will move to your private Drive once setup is done') + '</p>';
+  if (waiting && API) o += '<p class="quiet">' + waiting + ' safe on this phone \u00b7 ' + (sync.state === 'ok' ? 'uploading\u2026' : 'will move to your private Drive once setup is done') + '</p>';
   if (!ms.length) return o + '<p class="empty">No memories yet.</p></div>';
   var cur = '';
   ms.slice(0, 60).forEach(function (m) { var d = m.data, dd = d.date || day(m.at);
@@ -460,7 +467,7 @@ function vMem() {
     '<div class="tl">' + mem.files.map(function (f) { return '<span class="th sm" style="background-image:url(' + f.thumb + ')">' + (/^video/.test(f.mime) ? '<b>Video</b>' : '') + '</span>'; }).join('') + '</div>' +
     '<label class="lbl">Proud\u2026</label><div class="chips">' + PROUD.map(function (p) { return '<button class="chip' + (p[0] === mem.proud ? ' on' : '') + '" data-do="memProud" data-arg="' + p[0] + '">' + p[1] + '</button>'; }).join('') + '</div>' +
     '<textarea id="mnote" rows="3" placeholder="' + (mem.proud === 'me' ? 'What I\u2019m proud of in myself here\u2026' : mem.proud === 'from' ? 'What they did that made me proud\u2026' : 'What I\u2019m proud of in them\u2026') + '">' + esc(mem.note || '') + '</textarea>' +
-    '<button class="btn primary" data-do="saveMem">Keep this memory</button><p class="quiet center">' + (sync.state === 'ok' ? 'Private \u00b7 your Google Drive only' : 'Kept on this phone for now') + '</p></div>';
+    '<button class="btn primary" data-do="saveMem">Keep this memory</button><p class="quiet center">' + (!API ? 'Kept on this phone' : sync.state === 'ok' ? 'Private \u00b7 your Google Drive only' : 'Kept on this phone for now') + '</p></div>';
 }
 function keepMemForm() { var n = $app.querySelector('#mnote'), d = $app.querySelector('#mdate'); if (n) mem.note = n.value; if (d && d.value) mem.date = d.value; }
 on('memBack', function () { var f = mem && mem.from; mem = null; overlay = f; render(); });
@@ -532,21 +539,39 @@ on('rmMem', function (id) { var m = entries('memory').filter(function (x) { retu
   if (!confirm(up ? 'Remove this memory? The file in your private Drive folder stays.' : 'Remove this memory? Its photo or video on this phone is removed too. Copies you already saved keep it.')) return;
   delEntry(id); mediaAll().then(function (all) { all.filter(function (x) { return x.eid === id; }).forEach(function (x) { idbDo('readwrite', function (s) { return s.delete(x.id); }); }); }); close(); });
 
-/* ---------- Ask Katya ---------- */
-on('ask', function () { open(vAsk); });
-function vAsk() {
-  var ks = V.katya.slice().sort(function (a, b) { return a.at < b.at ? 1 : -1; });
-  return '<div class="page">' + back() + '<h1>Ask Katya</h1><p>Write what happened or what worries you. Katya writes back here.</p>' + (sync.state === 'ok' ? '' : '<p class="quiet">Not connected yet. What you write stays on this phone until it is.</p>') +
-    '<textarea id="askt" rows="6" placeholder="Tonight she shut her door after dinner and I wasn\u2019t sure whether to knock\u2026"></textarea><button class="btn primary" data-do="sendAsk">Send to Katya</button>' +
-    ks.map(function (k) { return '<div class="thread"><p class="small">' + esc(niceDate(k.at)) + '</p><p class="me">' + nl(k.text) + '</p>' + (k.reply ? '<p class="kat"><b>Katya</b><br>' + nl(k.reply) + '</p>' : '<p class="small">' + (k.status === 'waiting to send' ? 'Saved on this phone. Not sent yet.' : 'Sent. Katya will reply here.') + '</p>') + '</div>'; }).join('') + '</div>';
-}
-on('sendAsk', function () { var t = $app.querySelector('#askt').value.trim(); if (!t) return; push({ t: 'ask', text: t }); toast(sync.state === 'ok' ? 'Sending to Katya' : 'Saved. Not sent yet.'); render(); });
-
 var deferred = null;
-function standalone() { return matchMedia('(display-mode: standalone)').matches || navigator.standalone; }
+function standalone() { return NATIVE || matchMedia('(display-mode: standalone)').matches || navigator.standalone; }
 window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; if (!overlay) render(); });
 on('install', function () { if (deferred) { deferred.prompt(); deferred = null; } });
 on('noInstall', function () { ui.noInstall = true; jset('steady.ui', ui); render(); });
+
+/* ---------- Android app: who Steady is for, typed on this phone ---------- */
+function needsSetup() { return NATIVE && !LS.getItem('steady.kids') && !V.config.kids; }
+var setupStep = 1;
+function vSetup() {
+  var ks = (LS.getItem('steady.kids') || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean), ag = ages(), again = !needsSetup();
+  if (setupStep === 2) return '<div class="intro"><h1>Reflect asks about one child</h1><p>Which one, for now? You can change it later.</p><div class="stack">' +
+    ks.map(function (k) { return '<button class="btn" data-do="setupChild" data-arg="' + esc(k) + '">' + esc(k) + '</button>'; }).join('') + '</div></div>';
+  var pre = ks.map(function (k) { return k + (ag[k] ? ', ' + ag[k] : ''); }).join('\n');
+  return '<div class="' + (again ? 'page' : 'intro') + '">' + (again ? back() : '') + '<h1>' + (again ? 'People' : 'Who is Steady for?') + '</h1>' +
+    '<p>Your children\u2019s names, one per line. Add an age after a comma if you like.</p>' +
+    '<textarea id="skids" rows="5" aria-label="Children" placeholder="Name, 12">' + esc(pre) + '</textarea>' +
+    (again ? '<p class="small">Entries stay under the name they were written with, so a changed name starts fresh.</p>' : '') +
+    '<button class="btn primary" data-do="setupSave">' + (again ? 'Save' : 'Continue') + '</button>' +
+    (again ? '' : '<label class="btn ghost" for="copyfile">Restore from a copy</label><input id="copyfile" type="file" accept=".json,application/json" hidden><p class="small">Everything stays on this phone.</p>') + '</div>';
+}
+on('setupSave', function () {
+  var rows = ($app.querySelector('#skids').value || '').split(/\n+/).map(function (r) { return r.trim(); }).filter(Boolean), names = [], ag = [];
+  rows.forEach(function (r) { var m = r.match(/^(.*?)(?:[,\s]+(\d{1,2}))?\s*$/), n = (m ? m[1] : r).replace(/[,:]/g, ' ').trim().slice(0, 30); if (n && names.indexOf(n) < 0) { names.push(n); if (m && m[2]) ag.push(n + ':' + m[2]); } });
+  if (!names.length) { toast('Add at least one name'); return; }
+  LS.setItem('steady.kids', names.join(',')); LS.setItem('steady.ages', ag.join(','));
+  var c = LS.getItem('steady.c'); if (names.length === 1) LS.setItem('steady.c', names[0]);
+  if (names.length > 1 && names.indexOf(c) < 0) { setupStep = 2; open(vSetup); return; }
+  setupDone();
+});
+on('setupChild', function (k) { LS.setItem('steady.c', k); setupDone(); });
+function setupDone() { setupStep = 1; V = view(); overlay = ui.welcomed ? null : vWelcome; render(); window.scrollTo(0, 0); }
+on('people', function () { setupStep = 1; open(vSetup); });
 
 /* ---------- Save a copy / restore: a file on this phone, never sent anywhere ---------- */
 var COPY_KEYS = ['steady.q', 'steady.snap', 'steady.drafts', 'steady.c', 'steady.kids', 'steady.ages', 'steady.spouse'];
@@ -558,10 +583,10 @@ function vData() {
     '<p>' + esc(syncLine().replace(/\.$/, '')) + '. ' + plural(n, 'entry', 'entries') + ', ' + plural(ph, 'photo or video', 'photos and videos') + '.</p>' +
     '<p class="small">' + (last ? 'Last copy saved ' + esc(niceDate(last)) + '.' : 'No copy saved yet.') + '</p>' +
     '<button class="btn primary" data-do="saveCopy">Save a copy</button>' +
-    '<p class="small">One file in your Downloads, with your words and photos. It is not locked, so keep it somewhere private. Nothing is sent anywhere.</p>' +
+    '<p class="small">' + (NATIVE ? 'One file with your words and photos. You choose where it goes.' : 'One file in your Downloads, with your words and photos.') + ' It is not locked, so keep it somewhere private. Nothing is sent anywhere.</p>' +
     '<label class="btn" for="copyfile">Restore from a copy</label><input id="copyfile" type="file" accept=".json,application/json" hidden>' +
     '<p class="small">Adds what is in the file. Nothing on this phone is deleted.</p>' +
-    (copyMsg ? '<p class="quiet">' + esc(copyMsg) + '</p>' : '') + '</div>';
+    (copyMsg ? '<p class="quiet">' + esc(copyMsg) + '</p>' : '') + (NATIVE ? '<button class="btn ghost" data-do="people">People</button>' : '') + '</div>';
 }
 on('data', function () { copyMsg = ''; open(vData); });
 on('saveCopy', function (_, btn) {
@@ -574,13 +599,23 @@ on('saveCopy', function (_, btn) {
     var head = JSON.stringify({ format: 'steady-copy', version: 1, savedAt: nowStr(), data: data }).slice(0, -1), parts = [head, ',"media":['];
     media.forEach(function (m, i) { parts.push((i ? ',' : '') + JSON.stringify(m)); });
     parts.push(']}');
-    var blob = new Blob(parts, { type: 'application/json' }), a = document.createElement('a'), u = URL.createObjectURL(blob);
+    var blob = new Blob(parts, { type: 'application/json' }), size = blob.size > 1e6 ? (blob.size / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(blob.size / 1e3)) + ' KB', nm = 'steady-copy-' + today() + '.json';
+    if (NATIVE) return nativeSave(nm, parts, size, media.length);
+    var a = document.createElement('a'), u = URL.createObjectURL(blob);
     a.href = u; a.download = 'steady-copy-' + today() + '.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
     ui.lastCopy = nowStr(); jset('steady.ui', ui);
     copyMsg = 'Saved steady-copy-' + today() + '.json (' + (blob.size > 1e6 ? (blob.size / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(blob.size / 1e3)) + ' KB') + ', ' + plural(media.length, 'photo or video', 'photos and videos') + ').';
     open(vData);
   }).catch(function () { copyMsg = 'Could not save the copy. Nothing changed.'; open(vData); });
 });
+/* The app hands the file to Android in pieces; Android asks where to save it and tells us if it did. */
+function nativeSave(nm, parts, size, nMedia) {
+  var N = window.SteadyNative, C = 262144; N.beginFile(nm);
+  parts.forEach(function (p) { var i = 0; while (i < p.length) { var j = Math.min(i + C, p.length), h = p.charCodeAt(j - 1); if (j < p.length && h >= 0xD800 && h <= 0xDBFF) j--; /* never split an emoji in two */ N.appendFile(p.slice(i, j)); i = j; } });
+  window.steadyCopyDone = function (ok) { if (ok) { ui.lastCopy = nowStr(); jset('steady.ui', ui); }
+    copyMsg = ok ? 'Saved ' + nm + ' (' + size + ', ' + plural(nMedia, 'photo or video', 'photos and videos') + ').' : 'Not saved. Nothing changed.'; open(vData); };
+  copyMsg = 'Choose where to save it.'; N.finishFile(); open(vData);
+}
 function mergeById(a, b, key) { var seen = {}, out = (a || []).slice(); out.forEach(function (x) { seen[x[key]] = 1; }); (b || []).forEach(function (x) { if (x && x[key] != null && !seen[x[key]]) { seen[x[key]] = 1; out.push(x); } }); return out; }
 $app.addEventListener('change', function (ev) {
   if (ev.target.id !== 'copyfile' || !ev.target.files || !ev.target.files[0]) return;
@@ -619,8 +654,9 @@ function topBar() {
 }
 function render() {
   V = view();
+  if (needsSetup() && overlay !== vSetup) overlay = vSetup;
   if (!K) { $app.innerHTML = '<div class="locked"><span class="mark big" aria-hidden="true"></span><h1>Steady</h1><p>This is a private app. Open it from your personal link.</p></div>'; return; }
-  var bare = overlay === vWelcome || overlay === vAllDone;
+  var bare = overlay === vWelcome || overlay === vAllDone || (overlay === vSetup && needsSetup());
   if (overlay) { $app.innerHTML = '<div class="shell' + (bare ? ' bare' : '') + '">' + overlay() + '</div>'; bindAll(); return; }
   var body = ({ home: vHome, moment: vMoment, care: vCare, reflect: vReflect, person: vPortal, memories: vMemories, archive: vArchive })[route.tab] || vHome; body = body();
   $app.innerHTML = '<main class="page shell">' + topBar() + '<div class="fade">' + body + '</div>' + (route.tab === 'home' ? '<button class="sync link" data-do="data">' + esc(syncLine()) + ' \u00b7 Save a copy</button>' : '<p class="sync">' + esc(syncLine()) + '</p>') + '</main>';
@@ -643,7 +679,7 @@ var TSING = { journal: 'Journal', moment: 'Moment', memory: 'Memory', notice: 'N
 function allItems() {
   var out = [], ks = kids();
   function add(e, type, who, title, text, extra) { who = (who || []).filter(function (w) { return w === 'Me' || ks.indexOf(w) >= 0; }); if (!who.length) who = ['Me'];
-    out.push(Object.assign({ id: e.id, at: e.at, day: (e.data && e.data.date || day(e.at)).slice(0, 10), type: type, who: who, title: title, text: String(text || '') }, extra || {})); }
+    out.push(Object.assign({ id: e.id, at: e.at, day: (e.data && e.data.date || day(e.at)).slice(0, 10), type: type, who: who, title: title, text: String(text || ''), edited: e.data && e.data.edited }, extra || {})); }
   V.entries.forEach(function (e) { var d = e.data || {};
     if (e.type === 'journal') { var w = (d.about || []).slice(); [d.kid, d.momentKid, d.loveKid].forEach(function (k) { if (k && w.indexOf(k) < 0) w.push(k); }); if (d.care && w.indexOf('Me') < 0) w.push('Me');
       var f = [['intention', 'Wanted to be'], ['grateful', 'Grateful for'], ['proud', 'Proud of'], ['moment', 'A moment'], ['gave', 'I gave them'], ['care', 'For myself'], ['love', 'I love'], ['kinder', 'Kinder version']].filter(function (y) { return d[y[0]]; });
@@ -669,9 +705,42 @@ function card(it, showDate) {
     (it.text ? '<span class="cx">' + esc(cut(it.text.replace(/\n+/g, ' \u00b7 '), 110)) + '</span>' : '') + '</span>' +
     (it.thumb ? '<span class="th sm" style="background-image:url(' + esc(it.thumb) + ')">' + (it.video ? '<b>Video</b>' : '') + '</span>' : '');
   if (it.type === 'memory') return '<button class="ent" data-do="openMem" data-arg="' + it.id + '">' + head + '<span class="go">Open</span></button>';
-  if (!long) return '<div class="ent">' + head + '</div>';
-  return '<details class="ent"><summary>' + head + '<span class="go">More</span></summary><div class="full">' + (it.fields ? it.fields.map(function (f) { return '<p><b>' + esc(f[0]) + '</b>' + nl(f[1]) + '</p>'; }).join('') : '<p>' + nl(it.text) + '</p>') + '</div></details>';
+  return '<details class="ent"><summary>' + head + '<span class="go">' + (long ? 'More' : 'Open') + '</span></summary><div class="full">' + (long ? (it.fields ? it.fields.map(function (f) { return '<p><b>' + esc(f[0]) + '</b>' + nl(f[1]) + '</p>'; }).join('') : '<p>' + nl(it.text) + '</p>') : '') + entActions(it) + '</div></details>';
 }
+/* ---------- editing and removing Timeline entries ---------- */
+var EDIT = { moment: ['text', 'Moment'], love: ['text', 'What you noticed'], win: ['label', 'Win'], reframe: ['text', 'Kinder version'], parked: ['text', 'Set down'] };
+function entById(id) { return V.entries.filter(function (e) { return e.id === id; })[0]; }
+function entActions(it) {
+  var o = it.edited ? '<p class="small">Edited ' + esc(niceDate(it.edited)) + '</p>' : '';
+  if (isShabbat(NOW())) return o;
+  if (it.type === 'reflect') return o + '<div class="acts"><button class="btn small ghost" data-do="gotoQ" data-arg="' + it.q + '">Answer again in Reflect</button></div><p class="small">Earlier answers are always kept.</p>';
+  var e = entById(it.id); if (!e) return o;
+  var canEdit = e.type === 'journal' || e.type === 'letter' || e.type === 'selfcheck' || !!EDIT[e.type];
+  return o + '<div class="acts">' + (canEdit ? '<button class="btn small ghost" data-do="editEnt" data-arg="' + esc(e.id) + '">Edit</button>' : '') + '<button class="btn small ghost danger" data-do="rmEnt" data-arg="' + esc(e.id) + '">Remove</button></div>';
+}
+var edit = null;
+on('editEnt', function (id) { var e = entById(id); if (!e) return; var from = { o: overlay };
+  if (e.type === 'journal') { jdraft = Object.assign({}, e.data, { eid: e.id, at: e.at, from: from }); var k = e.data.kind; open(function () { return vJournal(k); }); return; }
+  if (e.type === 'letter') { handlers.openLetter(id); return; }
+  edit = { id: id, from: from, tone: e.data.tone }; open(vEdit); });
+function vEdit() {
+  var e = entById(edit.id); if (!e) return back() + '<p class="empty">This entry is no longer here.</p>';
+  var o = '<div class="page"><div class="bar"><button class="link back" data-do="editBack">\u2190 Back</button></div><p class="eyebrow">' + esc(longDay(day(e.data.date || e.at))) + '</p>';
+  if (e.type === 'selfcheck') o += '<h1>How I treated myself</h1><div class="chips">' + TONES.map(function (t) { return '<button class="chip' + (t[0] === edit.tone ? ' on' : '') + '" data-do="editTone" data-arg="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>';
+  else { var f = EDIT[e.type]; o += '<h1>' + esc(f[1]) + (e.data.kid ? ' \u00b7 ' + esc(e.data.kid) : '') + '</h1><textarea id="etext" rows="5" aria-label="' + esc(f[1]) + '">' + esc(e.data[f[0]] || '') + '</textarea>'; }
+  return o + '<button class="btn primary" data-do="saveEdit">Save changes</button><button class="btn ghost danger" data-do="rmEnt" data-arg="' + esc(e.id) + '">Remove this entry</button></div>';
+}
+on('editTone', function (t) { edit.tone = t; open(vEdit); });
+on('editBack', function () { overlay = edit ? edit.from.o : null; edit = null; render(); });
+on('saveEdit', function () { var e = entById(edit.id); if (!e) return; var d = Object.assign({}, e.data);
+  if (e.type === 'selfcheck') d.tone = edit.tone;
+  else { var t = $app.querySelector('#etext').value.trim(); if (!t) { toast('Write something, or remove it'); return; } d[EDIT[e.type][0]] = t; }
+  d.edited = nowStr(); entry(e.type, d, e.id, e.at); toast('Saved'); overlay = edit.from.o; edit = null; render(); });
+on('rmEnt', function (id) { var e = entById(id); if (!e) return;
+  var extra = e.type === 'journal' && (entById('jm_' + id) || entById('jl_' + id)) ? ' The moment and letter line it added go too.' : '';
+  if (!confirm('Remove this ' + (({ journal: 'journal entry', moment: 'moment', love: 'note', win: 'win', reframe: 'kinder version', parked: 'note', selfcheck: 'note', letter: 'letter' })[e.type] || 'entry') + ' from ' + niceDate(day(e.data.date || e.at)) + '?' + extra + ' Copies you saved before still have it.')) return;
+  delEntry(id); if (e.type === 'journal') { if (entById('jm_' + id)) delEntry('jm_' + id); if (entById('jl_' + id)) delEntry('jl_' + id); }
+  toast('Removed'); var f = overlay === vEdit && edit ? edit.from.o : overlay; edit = null; overlay = f === vEdit ? null : f; render(); });
 function filterBar() { var f = af();
   return '<div class="filters"><label class="lbl" for="asearch">Search</label><input id="asearch" type="search" placeholder="Words, names, anything" value="' + esc(f.q) + '">' +
     '<p class="lbl">Person</p><div class="chips scroll">' + ['all'].concat(kids(), ['Me']).map(function (k) { var on_ = k === 'all' ? !f.who.length : f.who.indexOf(k) >= 0; return '<button class="chip' + (on_ ? ' on' : '') + '" aria-pressed="' + on_ + '" data-do="afWho" data-arg="' + esc(k) + '">' + (k === 'all' ? 'Everyone' : esc(k)) + '</button>'; }).join('') + '</div>' +
@@ -757,14 +826,13 @@ function vHome() {
   o += '<header class="ph hello"><p class="date">' + esc(d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })) + '</p><h1>' + greeting() + '.</h1></header>';
   o += journalCard(d) || (q ? '' : '<button class="card prompt-card" data-do="journal" data-arg="' + (d.getHours() < 15 ? 'am' : 'pm') + '"><p class="eyebrow">' + (d.getHours() < 15 ? 'Morning journal' : 'Evening journal') + '</p><p class="serif">' + (jToday('am') || jToday('pm') ? 'Add to today\u2019s journal' : 'A minute for your journal') + '</p><span class="go">Write \u203A</span></button>');
   o += '<div class="ptiles">' + kids().concat(['Me']).map(personTile).join('') + '</div>';
-  var n = doneCount(), wait = V.katya.filter(function (k) { return k.status === 'waiting to send'; }).length, rep = V.katya.filter(function (k) { return k.reply; }).length;
+  var n = doneCount();
   o += '<div class="tools">' +
-    tool('tab', 'archive', 'Timeline', plural(ai.length, 'entry', 'entries')) +
+    tool('tab', 'archive', 'Timeline', plural(ai.length, 'entry', 'entries'), 'wide') +
     tool('tab', 'memories', 'Memories', plural(entries('memory').length, 'kept', 'kept')) +
     tool('tab', 'moment', 'Right now', 'A hard moment') +
     tool('tab', 'reflect', 'Reflect', n + ' of ' + P.length) +
-    tool('tab', 'care', 'Care', 'For you') +
-    (q ? '' : tool('do', 'ask', 'Ask Katya', wait ? wait + ' not sent yet' : rep ? plural(rep, 'reply', 'replies') : 'Write it out')) + '</div>';
+    tool('tab', 'care', 'Care', 'For you') + '</div>';
   var th = (V.config.therapy || '').toLowerCase(), wd = d.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
   if (th && th.indexOf(wd) === 0) o += '<div class="card soft"><p class="eyebrow">Tonight</p><p>' + esc(child()) + '\u2019s session is tonight. Be nearby and easy.</p></div>';
   if (td.length) o += '<section class="block"><h2 class="bh"><span>Today so far</span><button class="link" data-do="openDay" data-arg="' + today() + '">' + plural(td.length, 'entry', 'entries') + ' \u203A</button></h2>' + td.slice(0, 3).map(function (i) { return card(i); }).join('') + '</section>';
@@ -773,7 +841,7 @@ function vHome() {
   if (!standalone() && !ui.noInstall) o += '<div class="card soft"><p class="eyebrow">Keep it on your home screen</p><p class="small">' + (/iphone|ipad/i.test(navigator.userAgent) ? 'Safari \u2192 Share \u2192 Add to Home Screen' : 'Browser menu \u2192 Add to Home screen') + '</p><div class="row2">' + (deferred ? '<button class="btn small" data-do="install">Install</button>' : '') + '<button class="btn small ghost" data-do="noInstall">Not now</button></div></div>';
   return o;
 }
-function tool(kind, target, label, sub) { return '<button class="tool" ' + (kind === 'tab' ? 'data-tab' : 'data-do') + '="' + target + '"><b>' + esc(label) + '</b><small>' + esc(sub) + '</small></button>'; }
+function tool(kind, target, label, sub, cls) { return '<button class="tool' + (cls ? ' ' + cls : '') + '" ' + (kind === 'tab' ? 'data-tab' : 'data-do') + '="' + target + '"><b>' + esc(label) + '</b><small>' + esc(sub) + '</small></button>'; }
 function personTile(k) {
   var me = k === 'Me', a = ages()[k], its = allItems().filter(function (i) { return i.who.indexOf(k) >= 0; }), last = its[0];
   var line = last ? (last.day === today() ? 'Today' : niceDate(last.day)) : 'Nothing yet';
@@ -806,8 +874,7 @@ on('personTimeline', function (k) { ui.af = { who: [k], types: [], q: '' }; ui.a
 /* clean versions without symbol icons */
 function vMoment() {
   return '<header class="ph"><h1>Right now</h1></header><div class="stack">' +
-    HELP.map(function (h) { return '<button class="rn" data-do="help" data-arg="' + h[0] + '"><span><b>' + esc(fill(h[1])) + '</b><small>' + esc(h[2]) + '</small></span><span class="chev" aria-hidden="true">\u203A</span></button>'; }).join('') + '</div>' +
-    (isShabbat(NOW()) ? '' : '<button class="btn ghost" data-do="ask">Ask Katya</button>');
+    HELP.map(function (h) { return '<button class="rn" data-do="help" data-arg="' + h[0] + '"><span><b>' + esc(fill(h[1])) + '</b><small>' + esc(h[2]) + '</small></span><span class="chev" aria-hidden="true">\u203A</span></button>'; }).join('') + '</div>';
 }
 function vCare() {
   var plan = entries('plan')[0], pi = plan ? plan.data.items : [], cr = credits();
@@ -849,6 +916,16 @@ function journalCard(d) {
   return '';
 }
 
+/* ---------- Android back button: close what is open, then Home, then leave ---------- */
+window.steadyBack = function () {
+  if (needsSetup()) { if (setupStep === 2) { setupStep = 1; render(); return true; } return false; }
+  if (overlay === vEdit) { handlers.editBack(); return true; }
+  if (overlay && overlay !== vWelcome) { if (overlay === vMem) { handlers.memBack(); return true; } close(); return true; }
+  if (overlay === vWelcome) { handlers.skipIntro(); return true; }
+  if (route.tab !== 'home') { go('home'); return true; }
+  return false;
+};
+
 /* ---------- start ---------- */
 V = view();
 if (K && !ui.welcomed) overlay = vWelcome;
@@ -856,5 +933,5 @@ render();
 if (K) flush(true);
 setInterval(function () { if (K && document.visibilityState === 'visible') flush(true); }, 120000);
 document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && K) flush(true); });
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js');
+if (!NATIVE && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js');
 })();
