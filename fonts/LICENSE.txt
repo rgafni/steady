@@ -1,0 +1,4 @@
+Fonts in this folder are subsets of open fonts, each under the SIL Open Font License 1.1 (https://openfontlicense.org):
+- inter.woff2: Inter, by The Inter Project Authors
+- serif.woff2, serif-it.woff2: Source Serif Pro, by Adobe
+- hebrew.woff2: Frank Ruhl Libre, by Yanek Iontef and contributors
