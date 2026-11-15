@@ -3,7 +3,7 @@
 var P = window.STEADY_PROMPTS, SEC = window.STEADY_SECTIONS, $app = document.getElementById('app');
 var LS = localStorage, K = LS.getItem('steady.k'), API = LS.getItem('steady.api') || (window.STEADY_CONFIG || {}).API_URL || '';
 function jget(k, d) { try { var v = JSON.parse(LS.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
-function jset(k, v) { LS.setItem(k, JSON.stringify(v)); }
+function jset(k, v) { try { LS.setItem(k, JSON.stringify(v)); return true; } catch (e) { setTimeout(function () { toast('Phone storage is full. This was not saved.'); }, 0); return false; } }
 var snap = jget('steady.snap', { config: {}, answers: [], entries: [], katya: [] }), queue = jget('steady.q', []), drafts = jget('steady.drafts', {}), ui = jget('steady.ui', { lastQ: 0 });
 var sync = { state: API ? 'idle' : 'local', msg: '' };
 var route = { tab: 'home' }, overlay = null;
@@ -15,7 +15,7 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 function pad(n) { return (n < 10 ? '0' : '') + n; }
 function nowStr(d) { d = d || new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); }
 function day(s) { return String(s || '').slice(0, 10); }
-function today() { return day(nowStr()); }
+function today() { return day(nowStr(NOW())); }
 function daysAgo(s) { return Math.floor((new Date(today()) - new Date(day(s))) / 864e5); }
 function niceDate(s) { var d = new Date(String(s).slice(0, 10) + 'T12:00:00'); if (isNaN(d)) return ''; var n = daysAgo(s); return n === 0 ? 'Today' : n === 1 ? 'Yesterday' : d.toLocaleDateString(undefined, d.getFullYear() === NOW().getFullYear() ? { weekday: 'short', month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' }); }
 function toast(m) { var t = document.getElementById('toast'); t.textContent = m; t.className = 'on'; clearTimeout(toast.t); toast.t = setTimeout(function () { t.className = ''; }, 2200); }
@@ -71,7 +71,7 @@ var TABS = [['today', 'Today', '\u2600'], ['moment', 'Right now', '\u2766'], ['m
 function syncLine() {
   var n = queue.length;
   if (sync.state === 'local') return 'Saved on this phone only';
-  if (n && sync.state === 'offline') return 'Saved on this phone \u00b7 will sync when it can';
+  if (sync.state === 'offline') return n ? 'Saved on this phone. Not synced yet.' : 'Saved. Not connected right now.';
   if (sync.state === 'syncing') return 'Saving privately\u2026';
   return 'Saved privately';
 }
@@ -144,28 +144,6 @@ function oneOnOneIdeas() {
   return a.length ? a : ['A drive together, music of her choice', 'Get a treat, just the two of you', 'Walk around the block after dinner', 'Ask her to teach you something she likes', 'Sit with her while she does her thing'];
 }
 function careItems() { var a = []; var plan = entries('plan')[0]; if (plan) a = a.concat(plan.data.items || []); return a.concat(items(5), items(6)).filter(Boolean); }
-function vToday() {
-  var d = NOW(), h = d.getHours() + d.getMinutes() / 60, n = doneCount(), cr = credits(), out = '';
-  out += '<header class="hello"><p class="date">' + esc(d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })) + '</p><h1>' + greeting() + '.</h1></header>';
-  if (n < P.length) {
-    var nq = drafts[ui.lastQ] != null || !answered(ui.lastQ) ? ui.lastQ : nextOpen(ui.lastQ);
-    out += '<button class="card reflect-card" data-do="resume"><p class="eyebrow">Reflect \u00b7 ' + n + ' of ' + P.length + '</p><p class="serif">' + esc(fill(P[nq].t)) + '</p><p class="small">' + (n ? 'Pick up where you left off' : 'Start whenever you\u2019re ready. One question is plenty.') + ' \u2192</p></button>';
-  }
-  if (h >= 17.5 && h < 20 && !isShabbat(d)) out += '<div class="card soft"><p class="eyebrow">Family time</p><p>You don\u2019t need a perfect evening. One small moment is enough.</p></div>';
-  out += journalCard(d);
-  var th = (V.config.therapy || '').toLowerCase(), wd = d.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-  if (th && th.indexOf(wd) === 0) out += '<div class="card soft"><p class="eyebrow">Tonight</p><p>' + esc(child()) + ' has her session tonight. Afterward she may want quiet. Be nearby and easy. No questions needed.</p></div>';
-  var last1 = entries('moment').filter(function (m) { return m.data.tag === 'One-on-one' && m.data.kid === child(); })[0];
-  if (!last1 || daysAgo(last1.at) >= 7) { var idea = pick(oneOnOneIdeas()); out += '<div class="card"><p class="eyebrow">This week</p><p>Some time with ' + esc(child()) + ' that\u2019s just about enjoying each other.</p><p class="idea">\u201c' + esc(idea) + '\u201d</p><button class="btn small" data-do="logOne">We did something</button></div>'; }
-  if (cr.length) { var c = pick(cr, today() + 'c'); out += '<div class="card credit"><p class="eyebrow">Remember this</p><p class="serif">' + esc(c.t) + '</p><p class="small">' + esc(c.src) + '</p></div>'; }
-  var ci = careItems(); if (ci.length) out += '<div class="card"><p class="eyebrow">For you today</p><p>' + esc(pick(ci, today() + 'k')) + '</p><p class="small">Caring for yourself is part of caring for them.</p></div>';
-  var w = winsToday();
-  out += '<div class="card"><p class="eyebrow">Did well today' + (w.length ? ' \u00b7 ' + w.length : '') + '</p><div class="chips">' + WINS.slice(0, 6).map(function (x) { return '<button class="chip" data-do="win" data-arg="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
-    (w.length ? '<p class="small">' + w.map(function (x) { return esc(x.data.label); }).join(' \u00b7 ') + '</p>' : '<p class="small">Tap anything that\u2019s true. It counts.</p>') + '</div>';
-  if (!standalone() && !ui.noInstall) out += '<div class="card soft"><p class="eyebrow">Keep it on your home screen</p><p class="small">' + (/iphone|ipad/i.test(navigator.userAgent) ? 'In Safari, tap Share, then \u201cAdd to Home Screen\u201d.' : 'Tap Install, or use the browser menu \u2192 \u201cAdd to Home screen\u201d.') + '</p><div class="row2">' + (deferred ? '<button class="btn small" data-do="install">Install</button>' : '') + '<button class="btn small ghost" data-do="noInstall">Not now</button></div></div>';
-  out += '<div class="quick"><button class="btn" data-tab="moment">I need a moment</button><button class="btn" data-do="ask">Ask Katya</button></div>';
-  return out;
-}
 on('resume', function () { var q = drafts[ui.lastQ] != null || !answered(ui.lastQ) ? ui.lastQ : nextOpen(ui.lastQ); openQ(q < 0 ? 0 : q); });
 on('win', function (label) { entry('win', { label: label }); toast('Counted.'); render(); });
 on('logOne', function () { route = { tab: 'moments', preset: { kid: child(), tag: 'One-on-one' } }; render(); });
@@ -177,11 +155,6 @@ var HELP = [
   ['messed', 'I think I messed up', 'Talk to yourself like someone you love'],
   ['racing', 'My mind is racing', 'Slow down, set it down, one small step']
 ];
-function vMomentOld() {
-  return '<h1>Right now</h1><p class="lead">One breath first.</p>' +
-    HELP.map(function (h) { return '<button class="card helper" data-do="help" data-arg="' + h[0] + '"><p class="serif">' + esc(fill(h[1])) + '</p><p class="small">' + esc(h[2]) + '</p></button>'; }).join('') +
-    '<button class="btn ghost" data-do="ask">Ask Katya</button>';
-}
 on('help', function (k) { open(function () { return vHelp(k); }); });
 function yours(q, label) { var t = latest(q).trim(); return t ? '<div class="yours"><p class="eyebrow">' + esc(label) + '</p><p>' + nl(t) + '</p></div>' : '<p class="small">Answer reflection ' + (q + 1) + ' and your own words will show up here. <a href="#" data-do="gotoQ" data-arg="' + q + '">Answer it</a></p>'; }
 on('gotoQ', function (q) { openQ(+q); });
@@ -246,21 +219,6 @@ on('saveMoment', function () { var t = $app.querySelector('#mtext').value.trim()
   entry('moment', { kid: (route.preset || {}).kid || ui.kid || child(), text: t, tag: tg ? tg.dataset.arg : '' }); route.preset = {}; toast('Saved. That mattered.'); render(); });
 
 /* ---------- Care: self-compassion + self-care ---------- */
-function vCareOld() {
-  var ws = entries('win'), wk = ws.filter(function (w) { return daysAgo(w.at) < 7; }), harsh = latest(2).trim(), plan = entries('plan')[0], pi = plan ? plan.data.items : [];
-  var seeds = items(5).concat(items(6)).filter(function (x) { return pi.indexOf(x) < 0; });
-  var o = '<h1>Care</h1>';
-  o += '<div class="card"><p class="eyebrow">Did well \u00b7 ' + winsToday().length + ' today \u00b7 ' + wk.length + ' this week</p><div class="chips">' + WINS.map(function (x) { return '<button class="chip" data-do="win" data-arg="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
-    '<div class="inline"><input id="winx" placeholder="Something else I did well"><button class="btn small" data-do="winx">Add</button></div></div>';
-  o += '<div class="card credit"><p class="eyebrow">Remember this</p>' + (credits().length ? '<ul class="wall">' + credits().slice(0, 12).map(function (c) { return '<li><span>' + esc(c.t) + '</span><small>' + esc(c.src) + '</small></li>'; }).join('') + '</ul>' : '<p class="small">Your answers to reflections 1 and 2 will live here. <a href="#" data-do="gotoQ" data-arg="0">Start</a></p>') + '</div>';
-  o += journalHistory();
-  o += '<div class="card"><p class="eyebrow">A kinder voice</p>' + (harsh ? '<p class="small">When you slip, you tend to tell yourself:</p><p class="quote">' + nl(harsh) + '</p><p class="small">Would you say that to someone you love? Here\u2019s what you might say to them:</p>' : '<p class="small">Reflection 3 asks how you talk to yourself after a hard moment. <a href="#" data-do="gotoQ" data-arg="2">Answer it</a></p>') +
-    '<p class="serif">' + esc(reframe()) + '</p><textarea id="ref" rows="3" placeholder="Rewrite it in your own words, the way you\u2019d say it to a friend"></textarea><button class="btn small" data-do="saveRef">Keep this version</button></div>';
-  o += '<div class="card"><p class="eyebrow">My self-care plan</p>' + (pi.length ? '<ul class="plan">' + pi.map(function (x, i) { return '<li><span>' + esc(x) + '</span><button class="x" data-do="rmPlan" data-arg="' + i + '" >Remove</button></li>'; }).join('') + '</ul>' : '<p class="small">A few small, real things that fill you up. Not a reward for finishing everything.</p>') +
-    (seeds.length ? '<p class="small">From your answers \u2014 tap to add:</p><div class="chips">' + seeds.slice(0, 8).map(function (s) { return '<button class="chip" data-do="addPlan" data-arg="' + esc(s) + '">+ ' + esc(s) + '</button>'; }).join('') + '</div>' : '') +
-    '<div class="inline"><input id="planx" placeholder="e.g. 20 minutes to myself after the kids are down"><button class="btn small" data-do="planx">Add</button></div>' + yours(7, 'What you gave yourself permission to do') + '</div>';
-  return o;
-}
 on('winx', function () { var v = $app.querySelector('#winx').value.trim(); if (v) { entry('win', { label: v }); toast('Counted.'); render(); } });
 on('saveRef', function () { var v = $app.querySelector('#ref').value.trim(); if (v) { entry('reframe', { text: v }); toast('Kept.'); render(); } });
 function setPlan(list) { var p = entries('plan')[0]; entry('plan', { items: list }, p ? p.id : 'plan'); render(); }
@@ -269,19 +227,6 @@ on('planx', function () { var v = $app.querySelector('#planx').value.trim(); if 
 on('rmPlan', function (i) { var p = entries('plan')[0]; var l = p.data.items.slice(); l.splice(+i, 1); setPlan(l); });
 
 /* ---------- Reflect / revisit ---------- */
-function vReflectOld() {
-  var n = doneCount(), o = '<h1>Reflect</h1><p class="lead">' + n + ' of ' + P.length + ' answered</p>';
-  if (n < P.length) o += '<button class="btn primary" data-do="resume">' + (n ? 'Continue where I left off' : 'Begin') + '</button>';
-  ['you', 'child'].forEach(function (s) {
-    o += '<p class="sec">' + esc(fill(SEC[s])) + '</p>';
-    P.forEach(function (p, i) { if (p.s !== s) return; var a = ans(i), t = latest(i);
-      o += '<button class="card qcard' + (t ? '' : ' empty') + '" data-do="gotoQ" data-arg="' + i + '"><p class="small">' + (i + 1) + (a.length ? ' \u00b7 ' + esc(niceDate(a[a.length - 1].at)) + (a.length > 1 ? ' \u00b7 ' + a.length + ' versions' : '') : drafts[i] ? ' \u00b7 draft' : '') + '</p><p class="serif">' + esc(fill(p.t)) + '</p>' + (t ? '<p class="ans">' + esc(t.length > 160 ? t.slice(0, 160) + '\u2026' : t) + '</p>' : '') + '</button>' +
-        (a.length > 1 ? '<details class="hist"><summary>Earlier answers</summary>' + a.slice(0, -1).reverse().map(function (x) { return '<p class="small">' + esc(niceDate(x.at)) + '</p><p>' + nl(x.text) + '</p>'; }).join('') + '</details>' : ''); });
-  });
-  o += '<button class="card" data-do="ask"><p class="eyebrow">Ask Katya</p><p>Write about a situation and get a thoughtful reply.</p></button>';
-  return o;
-}
-
 /* ---------- time + Shabbat ---------- */
 function NOW() { var f = LS.getItem('steady.fakeNow'); return f ? new Date(f) : new Date(); }
 function sunset(d) {
@@ -303,13 +248,6 @@ function isShabbat(d) {
 /* ---------- gratitude journal ---------- */
 var HARSH = /\b(messed (it )?up|screw(ed)? up|fail(ed|ure|ing)?|bad (father|dad|parent)|terrible|awful|ruin(ed)?|my fault|(did it|failed|lost it|snapped) again|always do this|never get it right|idiot|stupid|useless|should have|shouldn'?t have|not good enough|worst)\b/i;
 function jToday(kind) { return entries('journal').filter(function (j) { return j.data.kind === kind && day(j.at) === day(nowStr(NOW())); })[0]; }
-function journalCardOld(d) {
-  if (isShabbat(d)) return '<div class="card soft"><p class="eyebrow">Shabbat</p><p>Nothing to fill in. Just be with them.</p></div>';
-  var h = d.getHours();
-  if (h >= 5 && h < 12 && !jToday('am')) return '<button class="card journal-card" data-do="journal" data-arg="am"><p class="eyebrow">Morning \u00b7 about a minute</p><p class="serif">Who do you want to be with the kids today?</p><p class="small">One intention, one thing you\u2019re grateful for \u2192</p></button>';
-  if ((h >= 20 || h < 3) && !jToday('pm')) return '<button class="card journal-card eve" data-do="journal" data-arg="pm"><p class="eyebrow">Evening \u00b7 two or three minutes</p><p class="serif">Before the day closes, notice what went right.</p><p class="small">Four short questions. Any of them can stay blank \u2192</p></button>';
-  return '';
-}
 var jdraft = {};
 on('journal', function (kind) { var ex = jToday(kind); jdraft = ex ? Object.assign({}, ex.data, { eid: ex.id }) : { kind: kind }; open(function () { return vJournal(kind); }); });
 function kidChips(field, cur) { return '<div class="chips">' + kids().map(function (k) { return '<button class="chip' + (k === cur ? ' on' : '') + '" data-do="jkid" data-arg="' + field + '|' + esc(k) + '">' + esc(k) + '</button>'; }).join('') + '</div>'; }
@@ -498,7 +436,6 @@ function filtered(f) { f = f || af(); var q = f.q.toLowerCase().trim();
   return allItems().filter(function (it) { return (!f.who.length || it.who.some(function (w) { return f.who.indexOf(w) >= 0; })) && (!f.types.length || f.types.indexOf(it.type) >= 0) && (!q || (it.title + ' ' + it.text + ' ' + it.who.join(' ')).toLowerCase().indexOf(q) >= 0); }); }
 function dots(who) { return '<span class="pdots">' + who.map(function (w) { return '<i style="background:' + accent(w) + '"></i>'; }).join('') + '</span>'; }
 function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
-function weekStart(s) { var d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() - d.getDay()); return ymd(d); }
 function uniqWho(its) { var s = []; its.forEach(function (i) { i.who.forEach(function (w) { if (s.indexOf(w) < 0) s.push(w); }); }); var order = kids().concat(['Me']); return s.sort(function (a, b) { return order.indexOf(a) - order.indexOf(b); }); }
 function onThisDay() {
   var its = allItems(), t = today(), wk = new Date(t + 'T12:00:00'); wk.setDate(wk.getDate() - 7); var w = ymd(wk);
@@ -619,9 +556,9 @@ function vAsk() {
   var ks = V.katya.slice().sort(function (a, b) { return a.at < b.at ? 1 : -1; });
   return '<div class="page">' + back() + '<h1>Ask Katya</h1><p>Describe what happened or what you\u2019re worried about. Katya will read it and write back here with some support and ideas. It stays private.</p>' +
     '<textarea id="askt" rows="6" placeholder="Tonight she shut her door after dinner and I wasn\u2019t sure whether to knock\u2026"></textarea><button class="btn primary" data-do="sendAsk">Send to Katya</button>' +
-    ks.map(function (k) { return '<div class="thread"><p class="small">' + esc(niceDate(k.at)) + '</p><p class="me">' + nl(k.text) + '</p>' + (k.reply ? '<p class="kat"><b>Katya</b><br>' + nl(k.reply) + '</p>' : '<p class="small">' + (k.status === 'waiting to send' ? 'Saved on this phone, sending when it can' : 'Katya will reply here') + '</p>') + '</div>'; }).join('') + '</div>';
+    ks.map(function (k) { return '<div class="thread"><p class="small">' + esc(niceDate(k.at)) + '</p><p class="me">' + nl(k.text) + '</p>' + (k.reply ? '<p class="kat"><b>Katya</b><br>' + nl(k.reply) + '</p>' : '<p class="small">' + (k.status === 'waiting to send' ? 'Saved on this phone. Not sent yet.' : 'Sent. Katya will reply here.') + '</p>') + '</div>'; }).join('') + '</div>';
 }
-on('sendAsk', function () { var t = $app.querySelector('#askt').value.trim(); if (!t) return; push({ t: 'ask', text: t }); toast('Sent to Katya'); render(); });
+on('sendAsk', function () { var t = $app.querySelector('#askt').value.trim(); if (!t) return; push({ t: 'ask', text: t }); toast(sync.state === 'ok' ? 'Sending to Katya' : 'Saved. Not sent yet.'); render(); });
 
 var deferred = null;
 function standalone() { return matchMedia('(display-mode: standalone)').matches || navigator.standalone; }
@@ -662,7 +599,6 @@ function plural(n, a, b) { return n + ' ' + (n === 1 ? a : (b || a + 's')); }
 /* every dated thing, one shape */
 var TYPES = [['journal', 'Journal'], ['moment', 'Moments'], ['memory', 'Memories'], ['notice', 'Noticed'], ['win', 'Wins'], ['reflect', 'Reflections'], ['care', 'Care notes'], ['letter', 'Letters']];
 var TSING = { journal: 'Journal', moment: 'Moment', memory: 'Memory', notice: 'Noticed', win: 'Win', reflect: 'Reflection', care: 'Care note', letter: 'Letter' };
-function tinfo(t) { return TYPES.filter(function (x) { return x[0] === t; })[0] || ['', '']; }
 function allItems() {
   var out = [], ks = kids();
   function add(e, type, who, title, text, extra) { who = (who || []).filter(function (w) { return w === 'Me' || ks.indexOf(w) >= 0; }); if (!who.length) who = ['Me'];
