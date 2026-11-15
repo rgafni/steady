@@ -298,7 +298,7 @@ var lkid = null;
 function loves(k) { return entries('love').filter(function (l) { return l.data.kid === k; }); }
 function lettersCard(inPortal) {
   var k = lkid || child(), ls = loves(k), lt = entries('letter').filter(function (l) { return l.data.kid === k; }), q = inPortal && isShabbat(NOW());
-  return '<div class="card letter-card"><p class="eyebrow">Letter to ' + esc(k) + '</p>' +
+  return '<div class="card letter-card">' +
     (inPortal ? '<p class="small">Built from what you notice and the moments you keep. ' + ls.length + ' thing' + (ls.length === 1 ? '' : 's') + ' noted so far.</p>' :
     '<div class="chips">' + kids().map(function (x) { return '<button class="chip' + (x === k ? ' on' : '') + '" data-do="lkid" data-arg="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
     '<p class="small">Things you love or admire about ' + esc(k) + '. One line at a time, whenever you notice.</p>' +
